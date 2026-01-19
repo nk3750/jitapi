@@ -171,6 +171,18 @@ class ExecuteWorkflowInput(BaseModel):
     )
 
 
+class DeleteApiInput(BaseModel):
+    """Input for delete_api tool."""
+
+    api_id: str = Field(
+        ...,
+        description="The API identifier to delete",
+        min_length=1,
+        max_length=100,
+        pattern=r"^[a-zA-Z0-9_-]+$",
+    )
+
+
 # Mapping of tool names to their input models
 TOOL_INPUT_MODELS: dict[str, type[BaseModel]] = {
     "register_api": RegisterApiInput,
@@ -181,6 +193,7 @@ TOOL_INPUT_MODELS: dict[str, type[BaseModel]] = {
     "call_api": CallApiInput,
     "set_api_auth": SetApiAuthInput,
     "execute_workflow": ExecuteWorkflowInput,
+    "delete_api": DeleteApiInput,
 }
 
 

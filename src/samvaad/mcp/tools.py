@@ -48,6 +48,8 @@ class ToolRegistry:
     - get_workflow: Full retrieval pipeline
     - call_api: Execute an API call
     - set_api_auth: Configure authentication
+    - execute_workflow: Execute a planned workflow
+    - delete_api: Remove an API and all its data
     """
 
     def __init__(
@@ -278,6 +280,21 @@ class ToolRegistry:
                     "required": ["workflow_id", "api_id"],
                 },
             },
+            {
+                "name": "delete_api",
+                "description": "Delete a registered API and all its data including endpoints, "
+                "embeddings, dependency graph, and authentication credentials.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "api_id": {
+                            "type": "string",
+                            "description": "The API identifier to delete",
+                        },
+                    },
+                    "required": ["api_id"],
+                },
+            },
         ]
 
     async def execute_tool(
@@ -301,6 +318,7 @@ class ToolRegistry:
             "call_api": self._call_api,
             "set_api_auth": self._set_api_auth,
             "execute_workflow": self._execute_workflow,
+            "delete_api": self._delete_api,
         }
 
         handler = handlers.get(tool_name)
@@ -669,4 +687,47 @@ class ToolRegistry:
                 "final_result": result.final_result,
             },
             error=result.error,
+        )
+
+    async def _delete_api(self, args: dict[str, Any]) -> ToolResult:
+        """Delete an API and all its data."""
+        api_id = args["api_id"]
+
+        # Check if API exists
+        if not self.spec_store.api_exists(api_id):
+            return ToolResult(
+                success=False,
+                data=None,
+                error=f"API not found: {api_id}",
+            )
+
+        # Track what was deleted
+        deleted = {
+            "spec": False,
+            "graph": False,
+            "embeddings": 0,
+            "auth": False,
+        }
+
+        # Delete from spec store (includes endpoints)
+        deleted["spec"] = self.spec_store.delete_api(api_id)
+
+        # Delete from graph store
+        deleted["graph"] = self.graph_store.delete_graph(api_id)
+
+        # Delete from vector store
+        deleted["embeddings"] = self.vector_store.delete_api(api_id)
+
+        # Delete auth credentials
+        deleted["auth"] = self.auth_handler.remove_auth(api_id)
+
+        logger.info(f"Deleted API {api_id}: {deleted}")
+
+        return ToolResult(
+            success=True,
+            data={
+                "api_id": api_id,
+                "deleted": deleted,
+                "message": f"Successfully deleted API '{api_id}' and all associated data",
+            },
         )
