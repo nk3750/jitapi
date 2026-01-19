@@ -1,6 +1,6 @@
 [project]
 name = "jitapi"
-version = "0.1.0"
+version = "0.1.1"
 description = "Just-in-Time API Orchestration System for LLMs - An MCP server for dynamic API discovery and execution"
 readme = "README.md"
 license = {text = "MIT"}

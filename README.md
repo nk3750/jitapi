@@ -2,6 +2,8 @@
 
 **Just-in-Time API Orchestration for LLMs**
 
+<!-- mcp-name: io.github.nk3750/jitapi -->
+
 JitAPI is an MCP server that enables LLMs (like Claude) to interact with ANY API by dynamically discovering relevant endpoints from OpenAPI specifications. Instead of loading entire API specs into context, JitAPI uses semantic search and dependency graphs to find only the endpoints needed for each task.
 
 ## Features
