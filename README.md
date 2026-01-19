@@ -27,6 +27,14 @@ Or with [uv](https://github.com/astral-sh/uv):
 uvx samvaad
 ```
 
+> **Note for macOS users**: If you get an "externally-managed-environment" error with pip, use a virtual environment:
+> ```bash
+> python3 -m venv .venv
+> source .venv/bin/activate
+> pip install samvaad
+> ```
+> Or use `uvx samvaad` which handles this automatically.
+
 ### Setup with Claude Desktop
 
 1. Locate your Claude Desktop config file:
