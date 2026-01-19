@@ -58,7 +58,9 @@ uvx samvaad
 
 ### Setup with Claude Code
 
-1. Edit your Claude Code config file (`~/.claude.json` or project-level `.claude.json`):
+**Option A: Project-level config (Recommended)**
+
+Create a `.mcp.json` file in your project directory:
 
 ```json
 {
@@ -74,8 +76,27 @@ uvx samvaad
 }
 ```
 
-2. Restart Claude Code
-3. Verify by asking: "List available Samvaad tools"
+Then start Claude Code from that directory. Samvaad will be available only in that project.
+
+**Option B: Global config**
+
+Edit `~/.claude.json` to make Samvaad available in all projects:
+
+```json
+{
+  "mcpServers": {
+    "samvaad": {
+      "command": "uvx",
+      "args": ["samvaad"],
+      "env": {
+        "OPENAI_API_KEY": "sk-proj-your-key-here"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Code and verify by asking: "List available Samvaad tools"
 
 **Alternative: Using pip-installed package**
 
