@@ -1,0 +1,421 @@
+openapi: "3.0.0"
+info:
+  title: Petstore API
+  version: "1.0.0"
+  description: A sample API for testing Samvaad
+
+servers:
+  - url: https://petstore.example.com/v1
+
+tags:
+  - name: pets
+    description: Pet operations
+  - name: orders
+    description: Order operations
+  - name: users
+    description: User operations
+
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      summary: List all pets
+      description: Returns a list of all pets in the store
+      tags:
+        - pets
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of pets to return
+          required: false
+          schema:
+            type: integer
+            default: 20
+        - name: status
+          in: query
+          description: Filter by status
+          required: false
+          schema:
+            type: string
+            enum: [available, pending, sold]
+      responses:
+        "200":
+          description: A list of pets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Pet"
+    post:
+      operationId: createPet
+      summary: Create a pet
+      description: Add a new pet to the store
+      tags:
+        - pets
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - category
+              properties:
+                name:
+                  type: string
+                  description: Name of the pet
+                category:
+                  type: string
+                  description: Category of the pet
+                status:
+                  type: string
+                  enum: [available, pending, sold]
+                  default: available
+      responses:
+        "201":
+          description: Pet created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+
+  /pets/{petId}:
+    get:
+      operationId: getPet
+      summary: Get a pet by ID
+      description: Returns a single pet
+      tags:
+        - pets
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          description: ID of the pet
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A pet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "404":
+          description: Pet not found
+    put:
+      operationId: updatePet
+      summary: Update a pet
+      description: Update an existing pet
+      tags:
+        - pets
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          description: ID of the pet to update
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                category:
+                  type: string
+                status:
+                  type: string
+                  enum: [available, pending, sold]
+      responses:
+        "200":
+          description: Pet updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+    delete:
+      operationId: deletePet
+      summary: Delete a pet
+      description: Deletes a pet from the store
+      tags:
+        - pets
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          description: ID of the pet to delete
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Pet deleted
+
+  /orders:
+    get:
+      operationId: listOrders
+      summary: List orders
+      description: Returns a list of orders
+      tags:
+        - orders
+      parameters:
+        - name: status
+          in: query
+          description: Filter by order status
+          schema:
+            type: string
+            enum: [placed, approved, delivered]
+      responses:
+        "200":
+          description: List of orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+    post:
+      operationId: createOrder
+      summary: Place an order
+      description: Place a new order for a pet
+      tags:
+        - orders
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - petId
+                - quantity
+              properties:
+                petId:
+                  type: string
+                  description: ID of the pet to order
+                quantity:
+                  type: integer
+                  description: Number of pets
+                shipDate:
+                  type: string
+                  format: date-time
+                  description: Expected ship date
+      responses:
+        "201":
+          description: Order placed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+
+  /orders/{orderId}:
+    get:
+      operationId: getOrder
+      summary: Get order by ID
+      description: Returns a specific order
+      tags:
+        - orders
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          description: ID of the order
+          schema:
+            type: string
+      responses:
+        "200":
+          description: An order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+    delete:
+      operationId: deleteOrder
+      summary: Delete order
+      description: Cancel an order
+      tags:
+        - orders
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          description: ID of the order to delete
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Order deleted
+
+  /users:
+    get:
+      operationId: listUsers
+      summary: List users
+      description: Returns a list of users
+      tags:
+        - users
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+    post:
+      operationId: createUser
+      summary: Create user
+      description: Create a new user account
+      tags:
+        - users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - email
+              properties:
+                username:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                firstName:
+                  type: string
+                lastName:
+                  type: string
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users/{userId}:
+    get:
+      operationId: getUser
+      summary: Get user by ID
+      description: Returns a single user
+      tags:
+        - users
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: ID of the user
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users/{userId}/orders:
+    get:
+      operationId: getUserOrders
+      summary: Get user orders
+      description: Returns orders for a specific user
+      tags:
+        - users
+        - orders
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: ID of the user
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User's orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+
+components:
+  schemas:
+    Pet:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+        status:
+          type: string
+          enum: [available, pending, sold]
+        createdAt:
+          type: string
+          format: date-time
+
+    Order:
+      type: object
+      required:
+        - id
+        - petId
+      properties:
+        id:
+          type: string
+        petId:
+          type: string
+        userId:
+          type: string
+        quantity:
+          type: integer
+        status:
+          type: string
+          enum: [placed, approved, delivered]
+        shipDate:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    User:
+      type: object
+      required:
+        - id
+        - username
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+security:
+  - apiKey: []

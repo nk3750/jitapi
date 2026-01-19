@@ -1,0 +1,420 @@
+openapi: "3.0.0"
+info:
+  title: Weather API
+  version: "1.0.0"
+  description: A weather API for testing dependency chains (similar to AccuWeather)
+
+servers:
+  - url: https://api.weather.example.com/v1
+
+tags:
+  - name: locations
+    description: Location search and lookup
+  - name: forecasts
+    description: Weather forecasts
+  - name: current
+    description: Current conditions
+
+paths:
+  /locations/search:
+    get:
+      operationId: searchLocations
+      summary: Search for locations
+      description: Search for cities and places by name
+      tags:
+        - locations
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search query (city name)
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum results
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: List of matching locations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Location"
+
+  /locations/{locationKey}:
+    get:
+      operationId: getLocation
+      summary: Get location details
+      description: Get details for a specific location
+      tags:
+        - locations
+      parameters:
+        - name: locationKey
+          in: path
+          required: true
+          description: The location key
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Location details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Location"
+
+  /currentconditions/{locationKey}:
+    get:
+      operationId: getCurrentConditions
+      summary: Get current weather
+      description: Get current weather conditions for a location
+      tags:
+        - current
+      parameters:
+        - name: locationKey
+          in: path
+          required: true
+          description: The location key (from location search)
+          schema:
+            type: string
+        - name: details
+          in: query
+          description: Include extended details
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Current conditions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentConditions"
+
+  /forecasts/daily/{locationKey}:
+    get:
+      operationId: getDailyForecast
+      summary: Get daily forecast
+      description: Get daily weather forecast for a location
+      tags:
+        - forecasts
+      parameters:
+        - name: locationKey
+          in: path
+          required: true
+          description: The location key
+          schema:
+            type: string
+        - name: days
+          in: query
+          description: Number of days (1, 5, 10, or 15)
+          schema:
+            type: integer
+            enum: [1, 5, 10, 15]
+            default: 5
+        - name: metric
+          in: query
+          description: Use metric units
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: Daily forecast
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyForecast"
+
+  /forecasts/hourly/{locationKey}:
+    get:
+      operationId: getHourlyForecast
+      summary: Get hourly forecast
+      description: Get hourly weather forecast for a location
+      tags:
+        - forecasts
+      parameters:
+        - name: locationKey
+          in: path
+          required: true
+          description: The location key
+          schema:
+            type: string
+        - name: hours
+          in: query
+          description: Number of hours (12, 24, 72, or 120)
+          schema:
+            type: integer
+            enum: [12, 24, 72, 120]
+            default: 12
+      responses:
+        "200":
+          description: Hourly forecast
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HourlyForecast"
+
+  /alerts/{locationKey}:
+    get:
+      operationId: getAlerts
+      summary: Get weather alerts
+      description: Get active weather alerts for a location
+      tags:
+        - current
+      parameters:
+        - name: locationKey
+          in: path
+          required: true
+          description: The location key
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Weather alerts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Alert"
+
+components:
+  schemas:
+    Location:
+      type: object
+      properties:
+        key:
+          type: string
+          description: Unique location key
+        localizedName:
+          type: string
+          description: City/location name
+        country:
+          type: object
+          properties:
+            id:
+              type: string
+            localizedName:
+              type: string
+        administrativeArea:
+          type: object
+          properties:
+            id:
+              type: string
+            localizedName:
+              type: string
+        geoPosition:
+          type: object
+          properties:
+            latitude:
+              type: number
+            longitude:
+              type: number
+            elevation:
+              type: number
+
+    CurrentConditions:
+      type: object
+      properties:
+        dateTime:
+          type: string
+          format: date-time
+        weatherText:
+          type: string
+          description: Text description of current weather
+        weatherIcon:
+          type: integer
+        hasPrecipitation:
+          type: boolean
+        precipitationType:
+          type: string
+        temperature:
+          type: object
+          properties:
+            metric:
+              type: object
+              properties:
+                value:
+                  type: number
+                unit:
+                  type: string
+            imperial:
+              type: object
+              properties:
+                value:
+                  type: number
+                unit:
+                  type: string
+        relativeHumidity:
+          type: integer
+        wind:
+          type: object
+          properties:
+            direction:
+              type: object
+              properties:
+                degrees:
+                  type: integer
+                localized:
+                  type: string
+            speed:
+              type: object
+              properties:
+                metric:
+                  type: object
+                  properties:
+                    value:
+                      type: number
+                    unit:
+                      type: string
+        uvIndex:
+          type: integer
+        visibility:
+          type: object
+          properties:
+            metric:
+              type: object
+              properties:
+                value:
+                  type: number
+                unit:
+                  type: string
+
+    DailyForecast:
+      type: object
+      properties:
+        headline:
+          type: object
+          properties:
+            effectiveDate:
+              type: string
+              format: date-time
+            text:
+              type: string
+            severity:
+              type: integer
+        dailyForecasts:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              temperature:
+                type: object
+                properties:
+                  minimum:
+                    type: object
+                    properties:
+                      value:
+                        type: number
+                      unit:
+                        type: string
+                  maximum:
+                    type: object
+                    properties:
+                      value:
+                        type: number
+                      unit:
+                        type: string
+              day:
+                type: object
+                properties:
+                  icon:
+                    type: integer
+                  iconPhrase:
+                    type: string
+                  hasPrecipitation:
+                    type: boolean
+                  precipitationType:
+                    type: string
+                  precipitationIntensity:
+                    type: string
+              night:
+                type: object
+                properties:
+                  icon:
+                    type: integer
+                  iconPhrase:
+                    type: string
+                  hasPrecipitation:
+                    type: boolean
+
+    HourlyForecast:
+      type: array
+      items:
+        type: object
+        properties:
+          dateTime:
+            type: string
+            format: date-time
+          weatherIcon:
+            type: integer
+          iconPhrase:
+            type: string
+          temperature:
+            type: object
+            properties:
+              value:
+                type: number
+              unit:
+                type: string
+          precipitationProbability:
+            type: integer
+          wind:
+            type: object
+            properties:
+              speed:
+                type: object
+                properties:
+                  value:
+                    type: number
+                  unit:
+                    type: string
+              direction:
+                type: object
+                properties:
+                  degrees:
+                    type: integer
+                  localized:
+                    type: string
+
+    Alert:
+      type: object
+      properties:
+        alertId:
+          type: integer
+        headline:
+          type: string
+        area:
+          type: string
+        category:
+          type: string
+        priority:
+          type: integer
+        source:
+          type: string
+        effectiveDate:
+          type: string
+          format: date-time
+        expirationDate:
+          type: string
+          format: date-time
+        description:
+          type: string
+
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: query
+      name: apikey
+
+security:
+  - apiKey: []

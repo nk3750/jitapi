@@ -1,0 +1,295 @@
+# Samvaad
+
+**Just-in-Time API Orchestration for LLMs**
+
+Samvaad is an MCP server that enables LLMs (like Claude) to interact with ANY API by dynamically discovering relevant endpoints from OpenAPI specifications. Instead of loading entire API specs into context, Samvaad uses semantic search and dependency graphs to find only the endpoints needed for each task.
+
+## Features
+
+- **Semantic Search**: Find relevant API endpoints using natural language queries
+- **Dependency Graph**: Automatically detects endpoint dependencies (e.g., "POST /orders needs product_id from GET /products")
+- **LLM-Powered Workflow Planning**: Uses GPT-4o-mini to extract parameters from queries and plan multi-step workflows
+- **Generic Execution**: Executes workflows with automatic parameter passing between steps
+- **Multi-API Support**: Register and query multiple APIs simultaneously
+- **MCP Integration**: Native integration with Claude Code via Model Context Protocol
+
+## Quick Start
+
+### Installation
+
+```bash
+pip install samvaad
+```
+
+Or with [uv](https://github.com/astral-sh/uv):
+
+```bash
+uvx samvaad
+```
+
+### Configure Claude Code
+
+Add Samvaad to your Claude Code MCP configuration (`~/.claude.json` or `claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "samvaad": {
+      "command": "uvx",
+      "args": ["samvaad"],
+      "env": {
+        "OPENAI_API_KEY": "sk-..."
+      }
+    }
+  }
+}
+```
+
+Or if installed via pip:
+
+```json
+{
+  "mcpServers": {
+    "samvaad": {
+      "command": "python",
+      "args": ["-m", "samvaad"],
+      "env": {
+        "OPENAI_API_KEY": "sk-..."
+      }
+    }
+  }
+}
+```
+
+### Usage with Claude Code
+
+Once configured, you can use natural language to work with APIs:
+
+```
+User: "Register the Petstore API from https://petstore.swagger.io/v2/swagger.json"
+Claude: [calls samvaad:register_api tool]
+✓ Registered Swagger Petstore with 20 endpoints
+
+User: "Find a pet and get its details"
+Claude: [calls samvaad:get_workflow tool]
+Workflow planned:
+1. GET /pet/findByStatus - Find pets by status
+2. GET /pet/{petId} - Get pet details
+Parameters extracted: status="available" (from context)
+
+User: "Execute that workflow"
+Claude: [calls samvaad:set_api_auth, then samvaad:execute_workflow]
+Step 1: Found 3 available pets
+Step 2: Retrieved details for pet "Max"
+```
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    INGESTION PIPELINE                           │
+│                                                                 │
+│  OpenAPI Spec → Parser → Graph Builder → Embedder → Storage    │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                    RUNTIME PIPELINE                             │
+│                                                                 │
+│  Query → Vector Search → Graph Expansion → LLM Rerank →        │
+│  Parameter Extraction → Workflow Execution                      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### How It Works
+
+1. **Register an API**: Parse OpenAPI spec, build dependency graph, create embeddings
+2. **Query**: User asks "get weather in Tokyo"
+3. **Search**: Find semantically relevant endpoints
+4. **Expand**: Add required dependencies (geocoding endpoint)
+5. **Plan**: LLM extracts "Tokyo" as city parameter, maps data flow
+6. **Execute**: Run workflow, passing coordinates from geocoding to weather API
+
+## MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `register_api` | Register an OpenAPI spec from URL |
+| `list_apis` | List all registered APIs |
+| `search_endpoints` | Semantic search for endpoints |
+| `get_workflow` | Plan a workflow with parameter extraction |
+| `execute_workflow` | Execute a planned workflow |
+| `get_endpoint_schema` | Get detailed schema for an endpoint |
+| `call_api` | Execute a single API call |
+| `set_api_auth` | Configure API authentication |
+
+## Configuration
+
+### Setting the OpenAI API Key
+
+Samvaad requires an OpenAI API key for embeddings and LLM-based workflow planning. You can set it in several ways:
+
+**Option 1: In MCP Configuration (Recommended)**
+```json
+{
+  "mcpServers": {
+    "samvaad": {
+      "command": "uvx",
+      "args": ["samvaad"],
+      "env": {
+        "OPENAI_API_KEY": "sk-proj-your-key-here"
+      }
+    }
+  }
+}
+```
+
+**Option 2: Environment Variable**
+```bash
+# Add to ~/.zshrc or ~/.bashrc
+export OPENAI_API_KEY="sk-proj-your-key-here"
+```
+
+**Option 3: .env File**
+
+Create a `.env` file in one of these locations (checked in order):
+1. Current working directory
+2. `~/.samvaad/.env`
+3. `~/.env`
+
+```bash
+# ~/.samvaad/.env
+OPENAI_API_KEY=sk-proj-your-key-here
+```
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OPENAI_API_KEY` | Yes | OpenAI API key for embeddings and reranking |
+| `SAMVAAD_STORAGE_DIR` | No | Data storage directory (default: `~/.samvaad`) |
+| `SAMVAAD_LOG_LEVEL` | No | Log level: DEBUG, INFO, WARNING, ERROR (default: INFO) |
+| `SAMVAAD_LOG_FILE` | No | File path for logs (default: stderr) |
+
+## Example: Weather API Workflow
+
+```
+User: "What's the weather in San Francisco?"
+
+Samvaad plans the workflow:
+1. GET /geo/1.0/direct
+   - Parameters: q="San Francisco" (from user query)
+   - Output mapping: lat=$[0].lat, lon=$[0].lon
+
+2. GET /data/2.5/weather
+   - Parameters: lat=step_1.lat, lon=step_1.lon
+   - Returns: Current weather data
+
+The LLM extracts "San Francisco" from the query and maps coordinates
+between steps - no hardcoded logic required.
+```
+
+## Development
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/samvaad.git
+cd samvaad
+
+# Install with dev dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Run linting
+ruff check src/
+```
+
+## Project Structure
+
+```
+samvaad/
+├── src/samvaad/
+│   ├── main.py          # Entry point
+│   ├── ingestion/       # OpenAPI parsing, graph building, embedding
+│   ├── retrieval/       # Search, expansion, reranking
+│   ├── execution/       # HTTP execution, workflow execution
+│   ├── mcp/             # MCP server, tools, resources
+│   └── stores/          # Data persistence
+├── tests/               # Unit tests
+├── examples/            # Usage examples
+└── pyproject.toml
+```
+
+## API Reference
+
+### Registering an API
+
+```python
+# Via MCP tool
+{
+  "tool": "register_api",
+  "arguments": {
+    "api_id": "weather",
+    "spec_url": "https://example.com/openapi.yaml"
+  }
+}
+```
+
+### Getting a Workflow
+
+```python
+# Via MCP tool
+{
+  "tool": "get_workflow",
+  "arguments": {
+    "query": "get the weather in Tokyo",
+    "api_id": "weather"
+  }
+}
+
+# Returns:
+{
+  "workflow_id": "abc123",
+  "steps": [
+    {
+      "endpoint_id": "GET /geo/1.0/direct",
+      "parameters": {
+        "q": {"value": "Tokyo", "source": "user_query"}
+      },
+      "output_mapping": {
+        "lat": "$[0].lat",
+        "lon": "$[0].lon"
+      }
+    },
+    ...
+  ]
+}
+```
+
+### Executing a Workflow
+
+```python
+# Via MCP tool
+{
+  "tool": "execute_workflow",
+  "arguments": {
+    "workflow_id": "abc123",
+    "api_id": "weather"
+  }
+}
+```
+
+## Supported Authentication
+
+- **API Key (Header)**: `X-API-Key`, or custom header name
+- **API Key (Query)**: `?apikey=...`, or custom param name
+- **Bearer Token**: `Authorization: Bearer ...`
+
+## License
+
+MIT
+
+## Contributing
+
+Contributions are welcome! Please read the contributing guidelines first.

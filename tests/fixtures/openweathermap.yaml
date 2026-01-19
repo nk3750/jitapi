@@ -1,0 +1,384 @@
+openapi: "3.0.0"
+info:
+  title: OpenWeatherMap API
+  version: "2.5"
+  description: |
+    Weather data API. To get weather for a city, first use the Geocoding API
+    to convert city name to coordinates, then use those coordinates with the
+    weather endpoints.
+
+servers:
+  - url: https://api.openweathermap.org
+
+tags:
+  - name: geocoding
+    description: Convert city names to geographic coordinates
+  - name: weather
+    description: Current weather data
+  - name: forecast
+    description: Weather forecasts
+
+paths:
+  /geo/1.0/direct:
+    get:
+      operationId: getCoordinates
+      summary: Get coordinates by city name
+      description: |
+        Convert city name to geographic coordinates (latitude/longitude).
+        Use these coordinates with weather endpoints.
+      tags:
+        - geocoding
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: "City name, state code, and country code (e.g., 'London,UK' or 'San Francisco,CA,US')"
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Number of results to return (max 5)
+          schema:
+            type: integer
+            default: 1
+            maximum: 5
+        - name: appid
+          in: query
+          required: true
+          description: Your API key
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of matching locations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Location"
+
+  /data/2.5/weather:
+    get:
+      operationId: getCurrentWeather
+      summary: Get current weather
+      description: |
+        Get current weather data for a location. Requires latitude and longitude
+        coordinates, which can be obtained from the Geocoding API.
+      tags:
+        - weather
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          description: Latitude (from geocoding API)
+          schema:
+            type: number
+        - name: lon
+          in: query
+          required: true
+          description: Longitude (from geocoding API)
+          schema:
+            type: number
+        - name: units
+          in: query
+          required: false
+          description: Units of measurement
+          schema:
+            type: string
+            enum: [standard, metric, imperial]
+            default: metric
+        - name: appid
+          in: query
+          required: true
+          description: Your API key
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current weather data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentWeather"
+
+  /data/2.5/forecast:
+    get:
+      operationId: getForecast
+      summary: Get 5-day forecast
+      description: |
+        Get 5-day weather forecast with 3-hour intervals. Requires latitude
+        and longitude coordinates from the Geocoding API.
+      tags:
+        - forecast
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          description: Latitude (from geocoding API)
+          schema:
+            type: number
+        - name: lon
+          in: query
+          required: true
+          description: Longitude (from geocoding API)
+          schema:
+            type: number
+        - name: units
+          in: query
+          required: false
+          description: Units of measurement
+          schema:
+            type: string
+            enum: [standard, metric, imperial]
+            default: metric
+        - name: cnt
+          in: query
+          required: false
+          description: Number of timestamps to return
+          schema:
+            type: integer
+        - name: appid
+          in: query
+          required: true
+          description: Your API key
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 5-day forecast data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Forecast"
+
+  /data/2.5/air_pollution:
+    get:
+      operationId: getAirPollution
+      summary: Get air pollution data
+      description: |
+        Get current air quality and pollution data. Requires coordinates
+        from the Geocoding API.
+      tags:
+        - weather
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          description: Latitude (from geocoding API)
+          schema:
+            type: number
+        - name: lon
+          in: query
+          required: true
+          description: Longitude (from geocoding API)
+          schema:
+            type: number
+        - name: appid
+          in: query
+          required: true
+          description: Your API key
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Air pollution data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AirPollution"
+
+components:
+  schemas:
+    Location:
+      type: object
+      description: Geographic location from geocoding
+      properties:
+        name:
+          type: string
+          description: City name
+        lat:
+          type: number
+          description: Latitude
+        lon:
+          type: number
+          description: Longitude
+        country:
+          type: string
+          description: Country code
+        state:
+          type: string
+          description: State or region
+
+    CurrentWeather:
+      type: object
+      properties:
+        coord:
+          type: object
+          properties:
+            lon:
+              type: number
+            lat:
+              type: number
+        weather:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              main:
+                type: string
+                description: "Weather condition (Rain, Snow, Clouds, etc.)"
+              description:
+                type: string
+              icon:
+                type: string
+        main:
+          type: object
+          properties:
+            temp:
+              type: number
+              description: Temperature
+            feels_like:
+              type: number
+              description: Perceived temperature
+            temp_min:
+              type: number
+            temp_max:
+              type: number
+            pressure:
+              type: integer
+              description: Atmospheric pressure (hPa)
+            humidity:
+              type: integer
+              description: Humidity percentage
+        visibility:
+          type: integer
+          description: Visibility in meters
+        wind:
+          type: object
+          properties:
+            speed:
+              type: number
+            deg:
+              type: integer
+            gust:
+              type: number
+        clouds:
+          type: object
+          properties:
+            all:
+              type: integer
+              description: Cloudiness percentage
+        dt:
+          type: integer
+          description: Time of data calculation (unix timestamp)
+        sys:
+          type: object
+          properties:
+            country:
+              type: string
+            sunrise:
+              type: integer
+            sunset:
+              type: integer
+        timezone:
+          type: integer
+        id:
+          type: integer
+          description: City ID
+        name:
+          type: string
+          description: City name
+
+    Forecast:
+      type: object
+      properties:
+        cnt:
+          type: integer
+          description: Number of timestamps returned
+        list:
+          type: array
+          items:
+            type: object
+            properties:
+              dt:
+                type: integer
+              main:
+                type: object
+                properties:
+                  temp:
+                    type: number
+                  feels_like:
+                    type: number
+                  humidity:
+                    type: integer
+              weather:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    main:
+                      type: string
+                    description:
+                      type: string
+              dt_txt:
+                type: string
+                description: "Time of forecast (YYYY-MM-DD HH:MM:SS)"
+        city:
+          type: object
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            country:
+              type: string
+
+    AirPollution:
+      type: object
+      properties:
+        coord:
+          type: object
+          properties:
+            lon:
+              type: number
+            lat:
+              type: number
+        list:
+          type: array
+          items:
+            type: object
+            properties:
+              main:
+                type: object
+                properties:
+                  aqi:
+                    type: integer
+                    description: "Air Quality Index (1=Good, 5=Very Poor)"
+              components:
+                type: object
+                properties:
+                  co:
+                    type: number
+                    description: Carbon monoxide (μg/m³)
+                  no2:
+                    type: number
+                    description: Nitrogen dioxide (μg/m³)
+                  o3:
+                    type: number
+                    description: Ozone (μg/m³)
+                  pm2_5:
+                    type: number
+                    description: Fine particulate matter (μg/m³)
+                  pm10:
+                    type: number
+                    description: Coarse particulate matter (μg/m³)
+
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: query
+      name: appid
