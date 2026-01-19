@@ -41,10 +41,10 @@ dev = [
 samvaad = "samvaad.main:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/samvaad"
-Documentation = "https://github.com/yourusername/samvaad#readme"
-Repository = "https://github.com/yourusername/samvaad"
-Issues = "https://github.com/yourusername/samvaad/issues"
+Homepage = "https://github.com/nk3750/samvaad"
+Documentation = "https://github.com/nk3750/samvaad#readme"
+Repository = "https://github.com/nk3750/samvaad"
+Issues = "https://github.com/nk3750/samvaad/issues"
 
 [build-system]
 requires = ["hatchling"]

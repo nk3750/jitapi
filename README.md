@@ -27,9 +27,17 @@ Or with [uv](https://github.com/astral-sh/uv):
 uvx samvaad
 ```
 
-### Configure Claude Code
+### Setup with Claude Desktop
 
-Add Samvaad to your Claude Code MCP configuration (`~/.claude.json` or `claude_desktop_config.json`):
+1. Locate your Claude Desktop config file:
+
+   | OS | Path |
+   |----|------|
+   | macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+   | Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
+   | Linux | `~/.config/Claude/claude_desktop_config.json` |
+
+2. Add the Samvaad MCP server configuration:
 
 ```json
 {
@@ -38,14 +46,40 @@ Add Samvaad to your Claude Code MCP configuration (`~/.claude.json` or `claude_d
       "command": "uvx",
       "args": ["samvaad"],
       "env": {
-        "OPENAI_API_KEY": "sk-..."
+        "OPENAI_API_KEY": "sk-proj-your-key-here"
       }
     }
   }
 }
 ```
 
-Or if installed via pip:
+3. Restart Claude Desktop
+4. Look for "samvaad" in the MCP servers list (hammer icon)
+
+### Setup with Claude Code
+
+1. Edit your Claude Code config file (`~/.claude.json` or project-level `.claude.json`):
+
+```json
+{
+  "mcpServers": {
+    "samvaad": {
+      "command": "uvx",
+      "args": ["samvaad"],
+      "env": {
+        "OPENAI_API_KEY": "sk-proj-your-key-here"
+      }
+    }
+  }
+}
+```
+
+2. Restart Claude Code
+3. Verify by asking: "List available Samvaad tools"
+
+**Alternative: Using pip-installed package**
+
+If you installed via pip instead of using uvx:
 
 ```json
 {
@@ -54,7 +88,25 @@ Or if installed via pip:
       "command": "python",
       "args": ["-m", "samvaad"],
       "env": {
-        "OPENAI_API_KEY": "sk-..."
+        "OPENAI_API_KEY": "sk-proj-your-key-here"
+      }
+    }
+  }
+}
+```
+
+**Alternative: From source (development)**
+
+```json
+{
+  "mcpServers": {
+    "samvaad": {
+      "command": "python",
+      "args": ["-m", "samvaad"],
+      "cwd": "/path/to/samvaad",
+      "env": {
+        "OPENAI_API_KEY": "sk-proj-your-key-here",
+        "PYTHONPATH": "/path/to/samvaad/src"
       }
     }
   }
@@ -192,7 +244,7 @@ between steps - no hardcoded logic required.
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/samvaad.git
+git clone https://github.com/nk3750/samvaad.git
 cd samvaad
 
 # Install with dev dependencies
@@ -217,7 +269,6 @@ samvaad/
 │   ├── mcp/             # MCP server, tools, resources
 │   └── stores/          # Data persistence
 ├── tests/               # Unit tests
-├── examples/            # Usage examples
 └── pyproject.toml
 ```
 
