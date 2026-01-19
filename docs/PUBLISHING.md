@@ -1,6 +1,6 @@
 # Publishing Guide
 
-This guide is for maintainers who need to publish Samvaad to PyPI.
+This guide is for maintainers who need to publish JitAPI to PyPI.
 
 ## Prerequisites (One-time Setup)
 
@@ -43,7 +43,7 @@ Before publishing, verify these files are updated:
 | File | Check |
 |------|-------|
 | `pyproject.toml` | Version number is correct |
-| `src/samvaad/__init__.py` | `__version__` matches pyproject.toml |
+| `src/jitapi/__init__.py` | `__version__` matches pyproject.toml |
 | `README.md` | Installation instructions are accurate |
 
 ## Build Commands
@@ -59,8 +59,8 @@ rm -rf dist/ build/ *.egg-info
 python -m build
 
 # This creates:
-#   dist/samvaad-X.Y.Z-py3-none-any.whl
-#   dist/samvaad-X.Y.Z.tar.gz
+#   dist/jitapi-X.Y.Z-py3-none-any.whl
+#   dist/jitapi-X.Y.Z.tar.gz
 
 # Verify the build
 twine check dist/*
@@ -77,10 +77,10 @@ twine upload --repository testpypi dist/*
 # Test installation in a fresh environment
 pip install --index-url https://test.pypi.org/simple/ \
     --extra-index-url https://pypi.org/simple/ \
-    samvaad
+    jitapi
 
 # Verify it works
-samvaad --help
+jitapi --help
 ```
 
 ## Publish to PyPI
@@ -92,8 +92,8 @@ Once TestPyPI testing passes:
 twine upload dist/*
 
 # Verify installation
-pip install samvaad
-uvx samvaad --help
+pip install jitapi
+uvx jitapi --help
 ```
 
 ## Version Bumping
@@ -102,7 +102,7 @@ For future releases:
 
 1. Update version in both files:
    - `pyproject.toml`: `version = "X.Y.Z"`
-   - `src/samvaad/__init__.py`: `__version__ = "X.Y.Z"`
+   - `src/jitapi/__init__.py`: `__version__ = "X.Y.Z"`
 
 2. Clean, build, and publish:
 
@@ -126,13 +126,13 @@ After publishing, verify the release:
 
 1. **Test fresh pip install:**
    ```bash
-   pip install samvaad
-   samvaad --help
+   pip install jitapi
+   jitapi --help
    ```
 
 2. **Test uvx:**
    ```bash
-   uvx samvaad --help
+   uvx jitapi --help
    ```
 
 3. **Test with Claude Desktop:**
@@ -142,7 +142,7 @@ After publishing, verify the release:
 
 4. **Test with Claude Code:**
    - Configure MCP server
-   - Ask: "List Samvaad tools"
+   - Ask: "List JitAPI tools"
    - Should show all 9 tools
 
 ## Troubleshooting

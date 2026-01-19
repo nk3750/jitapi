@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "samvaad": {
+      "command": "/Users/neelabhkumar/code/samvaad/.venv/bin/python",
+      "args": ["-m", "samvaad"],
+      "env": {
+        "OPENAI_API_KEY": "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",
+        "SAMVAAD_LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}

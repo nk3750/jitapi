@@ -1,12 +1,12 @@
-# Samvaad: Architecture & Workflow Documentation
+# JitAPI: Architecture & Workflow Documentation
 
-> **Samvaad** (Sanskrit: "conversation") - A Just-in-Time API Orchestration System for LLMs
+> **JitAPI** (Sanskrit: "conversation") - A Just-in-Time API Orchestration System for LLMs
 
 ---
 
 ## Executive Summary
 
-Samvaad is an MCP (Model Context Protocol) server that enables Claude to discover, understand, and execute workflows across any REST API. It transforms natural language queries into multi-step API calls by combining:
+JitAPI is an MCP (Model Context Protocol) server that enables Claude to discover, understand, and execute workflows across any REST API. It transforms natural language queries into multi-step API calls by combining:
 
 - **Semantic Search** - Find relevant endpoints using vector embeddings
 - **Dependency Analysis** - Understand data flow between endpoints
@@ -34,10 +34,10 @@ Samvaad is an MCP (Model Context Protocol) server that enables Claude to discove
 ### High-Level Overview
 
 ```
-                                    SAMVAAD ARCHITECTURE
+                                    JITAPI ARCHITECTURE
 
     +------------------+     +--------------------------------------------------+
-    |   Claude Code    |     |                  SAMVAAD MCP SERVER              |
+    |   Claude Code    |     |                  JITAPI MCP SERVER              |
     |                  |     |                                                  |
     |  User: "Get      |     |  +------------+  +------------+  +------------+  |
     |   weather in     |────>|  |   MCP      |  | Retrieval  |  | Execution  |  |
@@ -75,17 +75,17 @@ Samvaad is an MCP (Model Context Protocol) server that enables Claude to discove
 ### Source Code Layout
 
 ```
-samvaad/
+jitapi/
 ├── pyproject.toml                    # Package metadata, dependencies, entry points
 ├── README.md                         # User documentation
 │
-├── src/samvaad/
+├── src/jitapi/
 │   ├── __init__.py
-│   ├── __main__.py                   # Entry point: python -m samvaad
+│   ├── __main__.py                   # Entry point: python -m jitapi
 │   ├── main.py                       # Server initialization, CLI entry
 │   │
 │   ├── mcp/                          # MCP Server Layer
-│   │   ├── server.py                 # SamvaadServer - main MCP server class
+│   │   ├── server.py                 # JitAPIServer - main MCP server class
 │   │   ├── tools.py                  # ToolRegistry - 9 MCP tools
 │   │   ├── models.py                 # Pydantic input validation models
 │   │   └── resources.py              # MCP resources (API specs, endpoints)
@@ -124,7 +124,7 @@ samvaad/
 ### Data Storage Structure
 
 ```
-~/.samvaad/                           # Default storage root
+~/.jitapi/                           # Default storage root
 ├── specs/{api_id}.json               # Raw OpenAPI specs
 ├── endpoints/{api_id}.json           # Parsed endpoint data
 ├── graphs/{api_id}.json              # Dependency graphs (NetworkX)
@@ -139,12 +139,12 @@ samvaad/
 
 ### 3.1 MCP Server (`mcp/server.py`)
 
-**Class:** `SamvaadServer`
+**Class:** `JitAPIServer`
 
 The main entry point that initializes all components and registers MCP handlers.
 
 ```python
-class SamvaadServer:
+class JitAPIServer:
     def __init__(self, storage_dir: Path):
         # Initialize all stores
         self.spec_store = SpecStore(storage_dir)
@@ -657,9 +657,9 @@ Based on endpoint definition, resolved parameters are categorized:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `OPENAI_API_KEY` | Required for embeddings & reranking | - |
-| `SAMVAAD_STORAGE_DIR` | Data directory | `~/.samvaad` |
-| `SAMVAAD_LOG_LEVEL` | Log level | `INFO` |
-| `SAMVAAD_LOG_FILE` | Log file path | stderr |
+| `JITAPI_STORAGE_DIR` | Data directory | `~/.jitapi` |
+| `JITAPI_LOG_LEVEL` | Log level | `INFO` |
+| `JITAPI_LOG_FILE` | Log file path | stderr |
 
 ### 8.2 MCP Configuration
 
@@ -668,9 +668,9 @@ Add to `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "samvaad": {
+    "jitapi": {
       "command": "uvx",
-      "args": ["samvaad"],
+      "args": ["jitapi"],
       "env": {
         "OPENAI_API_KEY": "sk-..."
       }
@@ -856,7 +856,7 @@ Returns:
 
 ## Summary
 
-Samvaad transforms natural language into executable API workflows through:
+JitAPI transforms natural language into executable API workflows through:
 
 1. **Semantic Understanding** - Vector embeddings find relevant endpoints
 2. **Dependency Awareness** - Graph analysis ensures proper ordering

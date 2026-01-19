@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from samvaad.ingestion.graph_builder import DependencyGraphBuilder
-from samvaad.ingestion.parser import OpenAPIParser
+from jitapi.ingestion.graph_builder import DependencyGraphBuilder
+from jitapi.ingestion.parser import OpenAPIParser
 
 
 @pytest.fixture

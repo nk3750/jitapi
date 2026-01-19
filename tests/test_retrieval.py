@@ -6,11 +6,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from samvaad.retrieval.graph_expander import ExpandedEndpoint, GraphExpander
-from samvaad.retrieval.vector_search import VectorSearcher, VectorSearchResult
-from samvaad.stores.graph_store import GraphStore
-from samvaad.stores.spec_store import SpecStore
-from samvaad.stores.vector_store import SearchResult, VectorStore
+from jitapi.retrieval.graph_expander import ExpandedEndpoint, GraphExpander
+from jitapi.retrieval.vector_search import VectorSearcher, VectorSearchResult
+from jitapi.stores.graph_store import GraphStore
+from jitapi.stores.spec_store import SpecStore
+from jitapi.stores.vector_store import SearchResult, VectorStore
 
 
 @pytest.fixture

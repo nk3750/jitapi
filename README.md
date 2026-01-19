@@ -1,8 +1,8 @@
-# Samvaad
+# JitAPI
 
 **Just-in-Time API Orchestration for LLMs**
 
-Samvaad is an MCP server that enables LLMs (like Claude) to interact with ANY API by dynamically discovering relevant endpoints from OpenAPI specifications. Instead of loading entire API specs into context, Samvaad uses semantic search and dependency graphs to find only the endpoints needed for each task.
+JitAPI is an MCP server that enables LLMs (like Claude) to interact with ANY API by dynamically discovering relevant endpoints from OpenAPI specifications. Instead of loading entire API specs into context, JitAPI uses semantic search and dependency graphs to find only the endpoints needed for each task.
 
 ## Features
 
@@ -18,22 +18,22 @@ Samvaad is an MCP server that enables LLMs (like Claude) to interact with ANY AP
 ### Installation
 
 ```bash
-pip install samvaad
+pip install jitapi
 ```
 
 Or with [uv](https://github.com/astral-sh/uv):
 
 ```bash
-uvx samvaad
+uvx jitapi
 ```
 
 > **Note for macOS users**: If you get an "externally-managed-environment" error with pip, use a virtual environment:
 > ```bash
 > python3 -m venv .venv
 > source .venv/bin/activate
-> pip install samvaad
+> pip install jitapi
 > ```
-> Or use `uvx samvaad` which handles this automatically.
+> Or use `uvx jitapi` which handles this automatically.
 
 ### Setup with Claude Desktop
 
@@ -45,14 +45,14 @@ uvx samvaad
    | Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
    | Linux | `~/.config/Claude/claude_desktop_config.json` |
 
-2. Add the Samvaad MCP server configuration:
+2. Add the JitAPI MCP server configuration:
 
 ```json
 {
   "mcpServers": {
-    "samvaad": {
+    "jitapi": {
       "command": "uvx",
-      "args": ["samvaad"],
+      "args": ["jitapi"],
       "env": {
         "OPENAI_API_KEY": "sk-proj-your-key-here"
       }
@@ -62,7 +62,7 @@ uvx samvaad
 ```
 
 3. Restart Claude Desktop
-4. Look for "samvaad" in the MCP servers list (hammer icon)
+4. Look for "jitapi" in the MCP servers list (hammer icon)
 
 ### Setup with Claude Code
 
@@ -73,9 +73,9 @@ Create a `.mcp.json` file in your project directory:
 ```json
 {
   "mcpServers": {
-    "samvaad": {
+    "jitapi": {
       "command": "uvx",
-      "args": ["samvaad"],
+      "args": ["jitapi"],
       "env": {
         "OPENAI_API_KEY": "sk-proj-your-key-here"
       }
@@ -84,18 +84,18 @@ Create a `.mcp.json` file in your project directory:
 }
 ```
 
-Then start Claude Code from that directory. Samvaad will be available only in that project.
+Then start Claude Code from that directory. JitAPI will be available only in that project.
 
 **Option B: Global config**
 
-Edit `~/.claude.json` to make Samvaad available in all projects:
+Edit `~/.claude.json` to make JitAPI available in all projects:
 
 ```json
 {
   "mcpServers": {
-    "samvaad": {
+    "jitapi": {
       "command": "uvx",
-      "args": ["samvaad"],
+      "args": ["jitapi"],
       "env": {
         "OPENAI_API_KEY": "sk-proj-your-key-here"
       }
@@ -104,7 +104,7 @@ Edit `~/.claude.json` to make Samvaad available in all projects:
 }
 ```
 
-Restart Claude Code and verify by asking: "List available Samvaad tools"
+Restart Claude Code and verify by asking: "List available JitAPI tools"
 
 **Alternative: Using pip-installed package**
 
@@ -113,9 +113,9 @@ If you installed via pip instead of using uvx:
 ```json
 {
   "mcpServers": {
-    "samvaad": {
+    "jitapi": {
       "command": "python",
-      "args": ["-m", "samvaad"],
+      "args": ["-m", "jitapi"],
       "env": {
         "OPENAI_API_KEY": "sk-proj-your-key-here"
       }
@@ -129,13 +129,13 @@ If you installed via pip instead of using uvx:
 ```json
 {
   "mcpServers": {
-    "samvaad": {
+    "jitapi": {
       "command": "python",
-      "args": ["-m", "samvaad"],
-      "cwd": "/path/to/samvaad",
+      "args": ["-m", "jitapi"],
+      "cwd": "/path/to/jitapi",
       "env": {
         "OPENAI_API_KEY": "sk-proj-your-key-here",
-        "PYTHONPATH": "/path/to/samvaad/src"
+        "PYTHONPATH": "/path/to/jitapi/src"
       }
     }
   }
@@ -148,18 +148,18 @@ Once configured, you can use natural language to work with APIs:
 
 ```
 User: "Register the Petstore API from https://petstore.swagger.io/v2/swagger.json"
-Claude: [calls samvaad:register_api tool]
+Claude: [calls jitapi:register_api tool]
 ✓ Registered Swagger Petstore with 20 endpoints
 
 User: "Find a pet and get its details"
-Claude: [calls samvaad:get_workflow tool]
+Claude: [calls jitapi:get_workflow tool]
 Workflow planned:
 1. GET /pet/findByStatus - Find pets by status
 2. GET /pet/{petId} - Get pet details
 Parameters extracted: status="available" (from context)
 
 User: "Execute that workflow"
-Claude: [calls samvaad:set_api_auth, then samvaad:execute_workflow]
+Claude: [calls jitapi:set_api_auth, then jitapi:execute_workflow]
 Step 1: Found 3 available pets
 Step 2: Retrieved details for pet "Max"
 ```
@@ -207,15 +207,15 @@ Step 2: Retrieved details for pet "Max"
 
 ### Setting the OpenAI API Key
 
-Samvaad requires an OpenAI API key for embeddings and LLM-based workflow planning. You can set it in several ways:
+JitAPI requires an OpenAI API key for embeddings and LLM-based workflow planning. You can set it in several ways:
 
 **Option 1: In MCP Configuration (Recommended)**
 ```json
 {
   "mcpServers": {
-    "samvaad": {
+    "jitapi": {
       "command": "uvx",
-      "args": ["samvaad"],
+      "args": ["jitapi"],
       "env": {
         "OPENAI_API_KEY": "sk-proj-your-key-here"
       }
@@ -234,11 +234,11 @@ export OPENAI_API_KEY="sk-proj-your-key-here"
 
 Create a `.env` file in one of these locations (checked in order):
 1. Current working directory
-2. `~/.samvaad/.env`
+2. `~/.jitapi/.env`
 3. `~/.env`
 
 ```bash
-# ~/.samvaad/.env
+# ~/.jitapi/.env
 OPENAI_API_KEY=sk-proj-your-key-here
 ```
 
@@ -247,16 +247,16 @@ OPENAI_API_KEY=sk-proj-your-key-here
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `OPENAI_API_KEY` | Yes | OpenAI API key for embeddings and reranking |
-| `SAMVAAD_STORAGE_DIR` | No | Data storage directory (default: `~/.samvaad`) |
-| `SAMVAAD_LOG_LEVEL` | No | Log level: DEBUG, INFO, WARNING, ERROR (default: INFO) |
-| `SAMVAAD_LOG_FILE` | No | File path for logs (default: stderr) |
+| `JITAPI_STORAGE_DIR` | No | Data storage directory (default: `~/.jitapi`) |
+| `JITAPI_LOG_LEVEL` | No | Log level: DEBUG, INFO, WARNING, ERROR (default: INFO) |
+| `JITAPI_LOG_FILE` | No | File path for logs (default: stderr) |
 
 ## Example: Weather API Workflow
 
 ```
 User: "What's the weather in San Francisco?"
 
-Samvaad plans the workflow:
+JitAPI plans the workflow:
 1. GET /geo/1.0/direct
    - Parameters: q="San Francisco" (from user query)
    - Output mapping: lat=$[0].lat, lon=$[0].lon
@@ -273,8 +273,8 @@ between steps - no hardcoded logic required.
 
 ```bash
 # Clone the repository
-git clone https://github.com/nk3750/samvaad.git
-cd samvaad
+git clone https://github.com/nk3750/jitapi.git
+cd jitapi
 
 # Install with dev dependencies
 pip install -e ".[dev]"
@@ -289,8 +289,8 @@ ruff check src/
 ## Project Structure
 
 ```
-samvaad/
-├── src/samvaad/
+jitapi/
+├── src/jitapi/
 │   ├── main.py          # Entry point
 │   ├── ingestion/       # OpenAPI parsing, graph building, embedding
 │   ├── retrieval/       # Search, expansion, reranking

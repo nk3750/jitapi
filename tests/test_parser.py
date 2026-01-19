@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from samvaad.ingestion.parser import OpenAPIParser, SpecVersion
+from jitapi.ingestion.parser import OpenAPIParser, SpecVersion
 
 
 @pytest.fixture

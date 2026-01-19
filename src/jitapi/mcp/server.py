@@ -56,12 +56,12 @@ def setup_logging(level: str = "INFO", log_file: str | None = None) -> None:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # Configure root logger for samvaad
-    samvaad_logger = logging.getLogger("samvaad")
-    samvaad_logger.setLevel(log_level)
+    # Configure root logger for jitapi
+    jitapi_logger = logging.getLogger("jitapi")
+    jitapi_logger.setLevel(log_level)
 
     # Remove existing handlers
-    samvaad_logger.handlers.clear()
+    jitapi_logger.handlers.clear()
 
     # Add handler
     if log_file:
@@ -72,7 +72,7 @@ def setup_logging(level: str = "INFO", log_file: str | None = None) -> None:
 
     handler.setLevel(log_level)
     handler.setFormatter(formatter)
-    samvaad_logger.addHandler(handler)
+    jitapi_logger.addHandler(handler)
 
     # Also configure the mcp logger to reduce noise
     mcp_logger = logging.getLogger("mcp")
@@ -144,7 +144,7 @@ class SamvaadServer:
         self.resource_registry = ResourceRegistry(self.spec_store)
 
         # Create MCP server
-        self.server = Server("samvaad")
+        self.server = Server("jitapi")
         self._setup_handlers()
         logger.info("Samvaad server initialized successfully")
 

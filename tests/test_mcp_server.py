@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from samvaad.mcp.tools import ToolRegistry, ToolResult
+from jitapi.mcp.tools import ToolRegistry, ToolResult
 
 
 @pytest.fixture
