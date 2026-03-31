@@ -1,13 +1,21 @@
-"""Vector store for endpoint embeddings using ChromaDB."""
+"""Vector store for endpoint embeddings using numpy.
+
+Replaces ChromaDB with a lightweight numpy-based implementation.
+Uses cosine similarity over flat arrays — identical math, fewer deps.
+The dataset is small (50-500 vectors), so O(n) search is fine.
+"""
 
 from __future__ import annotations
 
+import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import chromadb
-from chromadb.config import Settings
+import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -21,34 +29,69 @@ class SearchResult:
 
 
 class VectorStore:
-    """Vector store for endpoint embeddings using ChromaDB.
+    """Vector store for endpoint embeddings using numpy.
 
     Provides semantic search capabilities over API endpoints.
+    Persists data as JSON with numpy arrays stored as lists.
     """
-
-    COLLECTION_NAME = "endpoints"
 
     def __init__(self, storage_dir: str | Path):
         """Initialize the vector store.
 
         Args:
-            storage_dir: Directory for ChromaDB persistence.
+            storage_dir: Directory for data persistence.
         """
         self.storage_dir = Path(storage_dir)
-        self.chroma_dir = self.storage_dir / "chroma"
-        self.chroma_dir.mkdir(parents=True, exist_ok=True)
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
+        self.data_file = self.storage_dir / "vector_store.json"
 
-        # Initialize ChromaDB with persistence
-        self.client = chromadb.PersistentClient(
-            path=str(self.chroma_dir),
-            settings=Settings(anonymized_telemetry=False),
-        )
+        # In-memory storage
+        self._ids: list[str] = []
+        self._embeddings: np.ndarray | None = None  # shape: (n, dim)
+        self._metadatas: list[dict[str, Any]] = []
+        self._documents: list[str] = []
+        self._dimension: int | None = None
 
-        # Get or create the endpoints collection
-        self.collection = self.client.get_or_create_collection(
-            name=self.COLLECTION_NAME,
-            metadata={"hnsw:space": "cosine"},  # Use cosine similarity
-        )
+        self._load()
+
+    def _load(self) -> None:
+        """Load persisted data from disk."""
+        if not self.data_file.exists():
+            return
+
+        try:
+            with open(self.data_file) as f:
+                data = json.load(f)
+
+            self._ids = data.get("ids", [])
+            self._metadatas = data.get("metadatas", [])
+            self._documents = data.get("documents", [])
+            self._dimension = data.get("dimension")
+
+            embeddings = data.get("embeddings", [])
+            if embeddings:
+                self._embeddings = np.array(embeddings, dtype=np.float32)
+                self._dimension = self._embeddings.shape[1]
+            else:
+                self._embeddings = None
+        except (json.JSONDecodeError, Exception) as e:
+            logger.warning(f"Failed to load vector store: {e}")
+            self._ids = []
+            self._embeddings = None
+            self._metadatas = []
+            self._documents = []
+
+    def _save(self) -> None:
+        """Persist data to disk."""
+        data = {
+            "ids": self._ids,
+            "metadatas": self._metadatas,
+            "documents": self._documents,
+            "dimension": self._dimension,
+            "embeddings": self._embeddings.tolist() if self._embeddings is not None else [],
+        }
+        with open(self.data_file, "w") as f:
+            json.dump(data, f)
 
     def add_endpoint(
         self,
@@ -67,23 +110,33 @@ class VectorStore:
             metadata: Optional metadata to store with the embedding.
             document: The text that was embedded (for reference).
         """
-        # Create unique ID combining api_id and endpoint_id
         doc_id = self._make_id(api_id, endpoint_id)
 
-        # Prepare metadata
-        meta = metadata or {}
+        meta = metadata.copy() if metadata else {}
         meta["api_id"] = api_id
         meta["endpoint_id"] = endpoint_id
-
-        # Filter out None values and non-string/numeric values for ChromaDB
         meta = self._filter_metadata(meta)
 
-        self.collection.upsert(
-            ids=[doc_id],
-            embeddings=[embedding],
-            metadatas=[meta],
-            documents=[document] if document else None,
-        )
+        emb = np.array(embedding, dtype=np.float32)
+
+        # Upsert: if exists, replace
+        if doc_id in self._ids:
+            idx = self._ids.index(doc_id)
+            self._embeddings[idx] = emb
+            self._metadatas[idx] = meta
+            self._documents[idx] = document
+        else:
+            self._ids.append(doc_id)
+            self._metadatas.append(meta)
+            self._documents.append(document)
+
+            if self._embeddings is None:
+                self._embeddings = emb.reshape(1, -1)
+                self._dimension = len(embedding)
+            else:
+                self._embeddings = np.vstack([self._embeddings, emb.reshape(1, -1)])
+
+        self._save()
 
     def add_endpoints_batch(
         self,
@@ -102,29 +155,33 @@ class VectorStore:
         if not endpoints:
             return
 
-        ids = []
-        embeddings = []
-        metadatas = []
-        documents = []
-
         for ep in endpoints:
             doc_id = self._make_id(ep["api_id"], ep["endpoint_id"])
-            ids.append(doc_id)
-            embeddings.append(ep["embedding"])
 
-            meta = ep.get("metadata", {})
+            meta = ep.get("metadata", {}).copy()
             meta["api_id"] = ep["api_id"]
             meta["endpoint_id"] = ep["endpoint_id"]
-            metadatas.append(self._filter_metadata(meta))
+            meta = self._filter_metadata(meta)
 
-            documents.append(ep.get("document", ""))
+            emb = np.array(ep["embedding"], dtype=np.float32)
 
-        self.collection.upsert(
-            ids=ids,
-            embeddings=embeddings,
-            metadatas=metadatas,
-            documents=documents,
-        )
+            if doc_id in self._ids:
+                idx = self._ids.index(doc_id)
+                self._embeddings[idx] = emb
+                self._metadatas[idx] = meta
+                self._documents[idx] = ep.get("document", "")
+            else:
+                self._ids.append(doc_id)
+                self._metadatas.append(meta)
+                self._documents.append(ep.get("document", ""))
+
+                if self._embeddings is None:
+                    self._embeddings = emb.reshape(1, -1)
+                    self._dimension = len(ep["embedding"])
+                else:
+                    self._embeddings = np.vstack([self._embeddings, emb.reshape(1, -1)])
+
+        self._save()
 
     def search(
         self,
@@ -144,50 +201,54 @@ class VectorStore:
         Returns:
             List of SearchResult objects, sorted by similarity.
         """
-        # Build where clause
-        where = None
-        where_conditions = []
+        if self._embeddings is None or len(self._ids) == 0:
+            return []
 
-        if api_id:
-            where_conditions.append({"api_id": {"$eq": api_id}})
+        query = np.array(query_embedding, dtype=np.float32)
 
-        if filter_deprecated:
-            where_conditions.append({"deprecated": {"$ne": True}})
+        # Compute cosine similarity
+        # similarity = dot(a, b) / (norm(a) * norm(b))
+        norms = np.linalg.norm(self._embeddings, axis=1)
+        query_norm = np.linalg.norm(query)
 
-        if len(where_conditions) == 1:
-            where = where_conditions[0]
-        elif len(where_conditions) > 1:
-            where = {"$and": where_conditions}
+        # Avoid division by zero
+        valid = (norms > 0) & (query_norm > 0)
+        similarities = np.zeros(len(self._ids), dtype=np.float32)
+        if query_norm > 0:
+            similarities[valid] = (
+                self._embeddings[valid] @ query / (norms[valid] * query_norm)
+            )
 
-        # Execute search
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            where=where,
-            include=["metadatas", "distances", "documents"],
-        )
+        # Build candidate mask
+        mask = np.ones(len(self._ids), dtype=bool)
+        for i, meta in enumerate(self._metadatas):
+            if api_id and meta.get("api_id") != api_id:
+                mask[i] = False
+            if filter_deprecated and meta.get("deprecated") is True:
+                mask[i] = False
 
-        # Convert to SearchResult objects
-        search_results = []
-        if results["ids"] and results["ids"][0]:
-            for i, doc_id in enumerate(results["ids"][0]):
-                metadata = results["metadatas"][0][i] if results["metadatas"] else {}
+        # Apply mask and get top-k
+        similarities[~mask] = -1.0
+        top_indices = np.argsort(similarities)[::-1][:top_k]
 
-                # ChromaDB returns distances (lower = better)
-                # Convert to similarity scores (higher = better)
-                distance = results["distances"][0][i] if results["distances"] else 0
-                similarity = 1 - distance  # For cosine distance
-
-                search_results.append(
-                    SearchResult(
-                        endpoint_id=metadata.get("endpoint_id", ""),
-                        api_id=metadata.get("api_id", ""),
-                        score=similarity,
-                        metadata=metadata,
-                    )
+        results = []
+        for idx in top_indices:
+            if not mask[idx]:
+                continue
+            score = float(similarities[idx])
+            if score <= -1.0:
+                continue
+            meta = self._metadatas[idx]
+            results.append(
+                SearchResult(
+                    endpoint_id=meta.get("endpoint_id", ""),
+                    api_id=meta.get("api_id", ""),
+                    score=score,
+                    metadata=meta,
                 )
+            )
 
-        return search_results
+        return results
 
     def search_by_text(
         self,
@@ -219,17 +280,17 @@ class VectorStore:
         Returns:
             Number of endpoints deleted.
         """
-        # Get all endpoints for this API
-        results = self.collection.get(
-            where={"api_id": {"$eq": api_id}},
-            include=[],
-        )
+        indices_to_delete = [
+            i for i, meta in enumerate(self._metadatas)
+            if meta.get("api_id") == api_id
+        ]
 
-        if not results["ids"]:
+        if not indices_to_delete:
             return 0
 
-        count = len(results["ids"])
-        self.collection.delete(ids=results["ids"])
+        count = len(indices_to_delete)
+        self._remove_indices(indices_to_delete)
+        self._save()
         return count
 
     def delete_endpoint(self, api_id: str, endpoint_id: str) -> bool:
@@ -244,11 +305,13 @@ class VectorStore:
         """
         doc_id = self._make_id(api_id, endpoint_id)
 
-        try:
-            self.collection.delete(ids=[doc_id])
-            return True
-        except Exception:
+        if doc_id not in self._ids:
             return False
+
+        idx = self._ids.index(doc_id)
+        self._remove_indices([idx])
+        self._save()
+        return True
 
     def get_endpoint(
         self, api_id: str, endpoint_id: str
@@ -264,20 +327,16 @@ class VectorStore:
         """
         doc_id = self._make_id(api_id, endpoint_id)
 
-        results = self.collection.get(
-            ids=[doc_id],
-            include=["metadatas", "embeddings", "documents"],
-        )
-
-        if not results["ids"]:
+        if doc_id not in self._ids:
             return None
 
+        idx = self._ids.index(doc_id)
         return {
             "endpoint_id": endpoint_id,
             "api_id": api_id,
-            "metadata": results["metadatas"][0] if results["metadatas"] else {},
-            "embedding": results["embeddings"][0] if results["embeddings"] else None,
-            "document": results["documents"][0] if results["documents"] else "",
+            "metadata": self._metadatas[idx],
+            "embedding": self._embeddings[idx].tolist() if self._embeddings is not None else None,
+            "document": self._documents[idx],
         }
 
     def count_endpoints(self, api_id: str | None = None) -> int:
@@ -290,13 +349,11 @@ class VectorStore:
             Number of endpoints.
         """
         if api_id:
-            results = self.collection.get(
-                where={"api_id": {"$eq": api_id}},
-                include=[],
+            return sum(
+                1 for meta in self._metadatas
+                if meta.get("api_id") == api_id
             )
-            return len(results["ids"])
-        else:
-            return self.collection.count()
+        return len(self._ids)
 
     def list_apis(self) -> list[str]:
         """List all APIs in the store.
@@ -304,23 +361,33 @@ class VectorStore:
         Returns:
             List of unique API IDs.
         """
-        # Get all unique api_ids
-        results = self.collection.get(include=["metadatas"])
-
         api_ids = set()
-        if results["metadatas"]:
-            for meta in results["metadatas"]:
-                if "api_id" in meta:
-                    api_ids.add(meta["api_id"])
-
+        for meta in self._metadatas:
+            if "api_id" in meta:
+                api_ids.add(meta["api_id"])
         return list(api_ids)
+
+    def _remove_indices(self, indices: list[int]) -> None:
+        """Remove entries at given indices."""
+        indices_set = set(indices)
+        self._ids = [v for i, v in enumerate(self._ids) if i not in indices_set]
+        self._metadatas = [v for i, v in enumerate(self._metadatas) if i not in indices_set]
+        self._documents = [v for i, v in enumerate(self._documents) if i not in indices_set]
+
+        if self._embeddings is not None:
+            keep = [i for i in range(len(self._embeddings)) if i not in indices_set]
+            if keep:
+                self._embeddings = self._embeddings[keep]
+            else:
+                self._embeddings = None
+                self._dimension = None
 
     def _make_id(self, api_id: str, endpoint_id: str) -> str:
         """Create a unique document ID."""
         return f"{api_id}::{endpoint_id}"
 
     def _filter_metadata(self, metadata: dict[str, Any]) -> dict[str, Any]:
-        """Filter metadata to only include ChromaDB-compatible values."""
+        """Filter metadata to store-compatible values."""
         filtered = {}
         for key, value in metadata.items():
             if value is None:
@@ -328,7 +395,6 @@ class VectorStore:
             if isinstance(value, (str, int, float, bool)):
                 filtered[key] = value
             elif isinstance(value, list):
-                # Convert lists to comma-separated strings
                 if all(isinstance(v, str) for v in value):
                     filtered[key] = ",".join(value)
         return filtered
