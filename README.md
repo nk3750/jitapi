@@ -1,5 +1,7 @@
 # JitAPI
 
+[![PyPI Downloads](https://img.shields.io/pepy/dt/jitapi)](https://pepy.tech/project/jitapi)
+
 **Just-in-Time API Orchestration for LLMs**
 
 <!-- mcp-name: io.github.nk3750/jitapi -->
