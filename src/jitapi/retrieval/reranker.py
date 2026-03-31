@@ -1,6 +1,9 @@
 """LLM-based reranker for endpoint relevance scoring.
 
-Uses OpenAI gpt-4o-mini to:
+Uses MCP sampling (delegates to host LLM) by default, with optional
+OpenAI fallback if sampling is unavailable and OPENAI_API_KEY is set.
+
+Responsibilities:
 1. Score endpoint relevance to user query
 2. Determine logical execution order
 3. Extract parameters from user query
@@ -11,12 +14,14 @@ Uses OpenAI gpt-4o-mini to:
 from __future__ import annotations
 
 import json
+import logging
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
-from openai import OpenAI
-
 from .graph_expander import ExpandedEndpoint
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -84,17 +89,13 @@ class RerankedWorkflow:
 
 
 class LLMReranker:
-    """Reranks and orders endpoints using OpenAI gpt-4o-mini.
+    """Reranks and orders endpoints using LLM-powered workflow planning.
 
-    Takes expanded search results and uses an LLM to:
-    - Score relevance to the original query
-    - Determine the logical order of operations
-    - Extract parameters from the user query
-    - Map data flow between steps using JSONPath
-    - Filter out irrelevant endpoints
+    Uses MCP sampling (host LLM) by default — zero extra API keys.
+    Falls back to OpenAI if MCP sampling is unavailable and OPENAI_API_KEY is set.
     """
 
-    DEFAULT_MODEL = "gpt-4o-mini"
+    OPENAI_MODEL = "gpt-4o-mini"
 
     SYSTEM_PROMPT = """You are an API workflow planner. Given a user query and a list of API endpoints, your task is to:
 
@@ -166,22 +167,31 @@ Dependency Information:
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = DEFAULT_MODEL,
     ):
         """Initialize the reranker.
 
         Args:
-            api_key: OpenAI API key. If None, uses OPENAI_API_KEY env var.
-            model: The model to use for reranking.
+            api_key: Optional OpenAI API key for fallback. If None, uses env var.
         """
-        self.client = OpenAI(api_key=api_key)
-        self.model = model
+        self._openai_client = None
+        self._openai_api_key = api_key
 
-    def rerank(
+        # Lazily initialize OpenAI client only if needed
+        openai_key = api_key or os.environ.get("OPENAI_API_KEY")
+        if openai_key:
+            try:
+                from openai import OpenAI
+                self._openai_client = OpenAI(api_key=openai_key)
+                logger.debug("OpenAI fallback initialized for reranker")
+            except ImportError:
+                logger.debug("openai package not installed, MCP sampling only")
+
+    async def rerank(
         self,
         query: str,
         endpoints: list[ExpandedEndpoint],
         max_steps: int = 5,
+        mcp_session: Any = None,
     ) -> RerankedWorkflow:
         """Rerank and order endpoints into a workflow.
 
@@ -189,6 +199,7 @@ Dependency Information:
             query: The original user query.
             endpoints: Expanded endpoints from graph expansion.
             max_steps: Maximum steps in the workflow.
+            mcp_session: MCP server session for sampling (preferred).
 
         Returns:
             RerankedWorkflow with ordered steps.
@@ -206,30 +217,24 @@ Dependency Information:
         endpoints_text = self._format_endpoints(endpoints)
         dependencies_text = self._format_dependencies(endpoints)
 
-        # Build the user prompt
         user_prompt = self.USER_PROMPT_TEMPLATE.format(
             query=query,
             endpoints=endpoints_text,
             dependencies=dependencies_text,
         )
 
-        # Call OpenAI
-        response = self.client.chat.completions.create(
-            model=self.model,
+        # Try MCP sampling first, then OpenAI fallback
+        response_text = await self._get_llm_response(
+            system_prompt=self.SYSTEM_PROMPT,
+            user_prompt=user_prompt,
             max_tokens=1500,
-            messages=[
-                {"role": "system", "content": self.SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
+            mcp_session=mcp_session,
         )
 
         # Parse response
-        response_text = response.choices[0].message.content
-
         try:
             result = json.loads(response_text)
         except json.JSONDecodeError:
-            # Try to extract JSON from response
             result = self._extract_json(response_text)
 
         # Build endpoint lookup
@@ -251,13 +256,11 @@ Dependency Information:
                             source=param_info.get("source", "literal"),
                         )
                     else:
-                        # Handle simple value (backward compatibility)
                         parameters[param_name] = ParameterSource(
                             value=param_info,
                             source="literal",
                         )
 
-                # Parse output mapping
                 output_mapping = step_data.get("output_mapping", {})
 
                 steps.append(
@@ -283,16 +286,18 @@ Dependency Information:
             excluded_endpoints=result.get("excluded", []),
         )
 
-    def score_relevance(
+    async def score_relevance(
         self,
         query: str,
         endpoint: ExpandedEndpoint,
+        mcp_session: Any = None,
     ) -> float:
         """Score a single endpoint's relevance to a query.
 
         Args:
             query: The user query.
             endpoint: The endpoint to score.
+            mcp_session: MCP server session for sampling.
 
         Returns:
             Relevance score from 0.0 to 1.0.
@@ -315,17 +320,129 @@ Respond with only a number from 0.0 to 1.0, where:
 
 Score:"""
 
-        response = self.client.chat.completions.create(
-            model=self.model,
+        response_text = await self._get_llm_response(
+            system_prompt=None,
+            user_prompt=prompt,
             max_tokens=10,
-            messages=[{"role": "user", "content": prompt}],
+            mcp_session=mcp_session,
         )
 
         try:
-            score = float(response.choices[0].message.content.strip())
+            score = float(response_text.strip())
             return max(0.0, min(1.0, score))
         except ValueError:
             return 0.5
+
+    async def _get_llm_response(
+        self,
+        system_prompt: str | None,
+        user_prompt: str,
+        max_tokens: int,
+        mcp_session: Any = None,
+    ) -> str:
+        """Get an LLM response using MCP sampling or OpenAI fallback.
+
+        Args:
+            system_prompt: Optional system prompt.
+            user_prompt: The user prompt.
+            max_tokens: Max tokens in response.
+            mcp_session: MCP server session for sampling.
+
+        Returns:
+            The LLM response text.
+
+        Raises:
+            RuntimeError: If neither MCP sampling nor OpenAI is available.
+        """
+        # Try MCP sampling first
+        if mcp_session is not None:
+            try:
+                return await self._call_mcp_sampling(
+                    mcp_session, system_prompt, user_prompt, max_tokens
+                )
+            except Exception as e:
+                logger.warning(f"MCP sampling failed, trying OpenAI fallback: {e}")
+
+        # Fall back to OpenAI
+        if self._openai_client is not None:
+            return self._call_openai(system_prompt, user_prompt, max_tokens)
+
+        raise RuntimeError(
+            "No LLM backend available for workflow planning. Either:\n"
+            "1. Use a client that supports MCP sampling (e.g., Claude Desktop, Claude Code)\n"
+            "2. Set OPENAI_API_KEY for OpenAI fallback\n"
+            "3. Install openai: pip install jitapi[openai]"
+        )
+
+    async def _call_mcp_sampling(
+        self,
+        session: Any,
+        system_prompt: str | None,
+        user_prompt: str,
+        max_tokens: int,
+    ) -> str:
+        """Call MCP sampling to get an LLM response from the host.
+
+        Args:
+            session: The MCP ServerSession.
+            system_prompt: Optional system prompt.
+            user_prompt: The user prompt.
+            max_tokens: Max tokens in response.
+
+        Returns:
+            The response text.
+        """
+        from mcp.types import SamplingMessage, TextContent
+
+        messages = [
+            SamplingMessage(
+                role="user",
+                content=TextContent(type="text", text=user_prompt),
+            )
+        ]
+
+        kwargs: dict[str, Any] = {
+            "messages": messages,
+            "max_tokens": max_tokens,
+        }
+        if system_prompt:
+            kwargs["system_prompt"] = system_prompt
+
+        result = await session.create_message(**kwargs)
+
+        # Extract text from response
+        if hasattr(result.content, "text"):
+            return result.content.text
+        return str(result.content)
+
+    def _call_openai(
+        self,
+        system_prompt: str | None,
+        user_prompt: str,
+        max_tokens: int,
+    ) -> str:
+        """Call OpenAI API as fallback.
+
+        Args:
+            system_prompt: Optional system prompt.
+            user_prompt: The user prompt.
+            max_tokens: Max tokens in response.
+
+        Returns:
+            The response text.
+        """
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": user_prompt})
+
+        response = self._openai_client.chat.completions.create(
+            model=self.OPENAI_MODEL,
+            max_tokens=max_tokens,
+            messages=messages,
+        )
+
+        return response.choices[0].message.content
 
     def _format_endpoints(self, endpoints: list[ExpandedEndpoint]) -> str:
         """Format endpoints for the prompt."""

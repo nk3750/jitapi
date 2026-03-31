@@ -100,7 +100,7 @@ class SamvaadServer:
 
         Args:
             storage_dir: Directory for data storage.
-            openai_api_key: OpenAI API key for embeddings and reranking.
+            openai_api_key: Optional OpenAI API key (for fallback). No longer required.
             log_level: Logging level (DEBUG, INFO, WARNING, ERROR).
             log_file: Optional file path for logging.
         """
@@ -111,22 +111,23 @@ class SamvaadServer:
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Initializing Samvaad server with storage: {self.storage_dir}")
 
+        # Initialize embedder (auto-detects provider from env vars)
+        logger.debug("Initializing embedder...")
+        self.embedder = EndpointEmbedder(api_key=openai_api_key)
+
         # Initialize components
         logger.debug("Initializing indexer...")
-        self.indexer = APIIndexer(self.storage_dir, openai_api_key)
+        self.indexer = APIIndexer(self.storage_dir, embedder=self.embedder)
 
         logger.debug("Initializing stores...")
         self.spec_store = SpecStore(self.storage_dir)
         self.vector_store = VectorStore(self.storage_dir)
         self.graph_store = GraphStore(self.storage_dir)
 
-        logger.debug("Initializing embedder...")
-        self.embedder = EndpointEmbedder(api_key=openai_api_key)
-
         logger.debug("Initializing auth handler...")
         self.auth_handler = AuthHandler(self.storage_dir)
 
-        # Reranker (uses OpenAI)
+        # Reranker (uses MCP sampling by default, OpenAI as fallback)
         logger.debug("Initializing reranker...")
         self.reranker = LLMReranker(api_key=openai_api_key)
 
@@ -170,7 +171,16 @@ class SamvaadServer:
             logger.info(f"Tool call: {name}")
             logger.debug(f"Tool arguments: {arguments}")
 
-            result = await self.tool_registry.execute_tool(name, arguments)
+            # Get MCP session for sampling (reranker uses this)
+            mcp_session = None
+            try:
+                mcp_session = self.server.request_context.session
+            except Exception:
+                logger.debug("MCP session not available for sampling")
+
+            result = await self.tool_registry.execute_tool(
+                name, arguments, mcp_session=mcp_session
+            )
 
             if result.success:
                 logger.info(f"Tool {name} completed successfully")

@@ -298,17 +298,20 @@ class ToolRegistry:
         ]
 
     async def execute_tool(
-        self, tool_name: str, arguments: dict[str, Any]
+        self, tool_name: str, arguments: dict[str, Any],
+        mcp_session: Any = None,
     ) -> ToolResult:
         """Execute a tool by name.
 
         Args:
             tool_name: The tool to execute.
             arguments: Tool arguments.
+            mcp_session: MCP server session for sampling (passed to reranker).
 
         Returns:
             ToolResult with execution results.
         """
+        self._current_mcp_session = mcp_session
         handlers = {
             "register_api": self._register_api,
             "list_apis": self._list_apis,
@@ -452,7 +455,10 @@ class ToolRegistry:
 
         # Step 3: Rerank (if reranker available)
         if self.reranker:
-            workflow = self.reranker.rerank(query, expansion.endpoints, max_steps)
+            workflow = await self.reranker.rerank(
+                query, expansion.endpoints, max_steps,
+                mcp_session=getattr(self, '_current_mcp_session', None),
+            )
 
             # Generate workflow ID and cache it
             workflow_id = str(uuid.uuid4())[:8]

@@ -1,4 +1,4 @@
-"""Main entry point for Samvaad MCP server."""
+"""Main entry point for JitAPI MCP server."""
 
 from __future__ import annotations
 
@@ -11,25 +11,27 @@ from dotenv import load_dotenv
 
 
 def main():
-    """Run the Samvaad MCP server.
+    """Run the JitAPI MCP server.
 
     Configuration via environment variables:
-    - OPENAI_API_KEY: Required. OpenAI API key for embeddings and reranking.
     - JITAPI_STORAGE_DIR: Optional. Directory for data storage (default: ~/.jitapi)
     - JITAPI_LOG_LEVEL: Optional. Log level: DEBUG, INFO, WARNING, ERROR (default: INFO)
     - JITAPI_LOG_FILE: Optional. File path for logs (default: stderr)
+    - JITAPI_EMBEDDING_PROVIDER: Optional. Force embedding provider: voyage|openai|cohere|local
 
-    The API key can also be set in a .env file in:
-    - Current working directory
-    - ~/.jitapi/.env
-    - Home directory
+    Embedding provider auto-detection (if JITAPI_EMBEDDING_PROVIDER not set):
+    - VOYAGE_API_KEY set → Voyage AI embeddings
+    - OPENAI_API_KEY set → OpenAI embeddings
+    - COHERE_API_KEY set → Cohere embeddings
+    - None set → local fastembed (zero-config, no API key needed)
+
+    Reranker (workflow planning):
+    - Uses MCP sampling (host LLM) by default — no API key needed
+    - Falls back to OpenAI if OPENAI_API_KEY is set and sampling unavailable
     """
     # Load .env files (in order of priority)
-    # 1. Current directory
     load_dotenv()
-    # 2. Samvaad storage directory
     load_dotenv(Path.home() / ".jitapi" / ".env")
-    # 3. Home directory
     load_dotenv(Path.home() / ".env")
 
     # Get configuration from environment
@@ -41,17 +43,7 @@ def main():
     log_level = os.environ.get("JITAPI_LOG_LEVEL", "INFO")
     log_file = os.environ.get("JITAPI_LOG_FILE")
 
-    # Validate required keys
-    if not openai_api_key:
-        print("Error: OPENAI_API_KEY environment variable is required", file=sys.stderr)
-        print("", file=sys.stderr)
-        print("Set it with: export OPENAI_API_KEY=your-key", file=sys.stderr)
-        print("", file=sys.stderr)
-        print("Or configure it in your Claude Code MCP settings:", file=sys.stderr)
-        print('  "env": { "OPENAI_API_KEY": "sk-..." }', file=sys.stderr)
-        sys.exit(1)
-
-    # Create and run server
+    # Create and run server — no API keys required
     from .mcp.server import create_server
 
     server = create_server(
@@ -61,7 +53,6 @@ def main():
         log_file=log_file,
     )
 
-    # Run the server
     asyncio.run(server.run())
 
 
