@@ -45,12 +45,14 @@ class APIIndexer:
         self,
         storage_dir: str | Path,
         openai_api_key: str | None = None,
+        embedder: EndpointEmbedder | None = None,
     ):
         """Initialize the API indexer.
 
         Args:
             storage_dir: Base directory for all storage.
-            openai_api_key: OpenAI API key for embeddings.
+            openai_api_key: Deprecated. Use embedder param or env vars instead.
+            embedder: Optional pre-configured embedder. If None, auto-detected.
         """
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
@@ -58,7 +60,7 @@ class APIIndexer:
         # Initialize components
         self.parser = OpenAPIParser()
         self.graph_builder = DependencyGraphBuilder()
-        self.embedder = EndpointEmbedder(api_key=openai_api_key)
+        self.embedder = embedder or EndpointEmbedder(api_key=openai_api_key)
 
         # Initialize stores
         self.spec_store = SpecStore(self.storage_dir)
