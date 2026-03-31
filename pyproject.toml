@@ -1,6 +1,6 @@
 [project]
 name = "jitapi"
-version = "0.1.1"
+version = "0.2.0"
 description = "Just-in-Time API Orchestration System for LLMs - An MCP server for dynamic API discovery and execution"
 readme = "README.md"
 license = {text = "MIT"}
@@ -21,8 +21,8 @@ dependencies = [
     "mcp>=1.0.0",
     "openapi-pydantic>=0.4.0",
     "pyyaml>=6.0",
-    "chromadb>=0.4.0",
-    "openai>=1.0.0",
+    "numpy>=1.24.0",
+    "fastembed>=0.2.0",
     "networkx>=3.0",
     "httpx>=0.25.0",
     "pydantic>=2.0.0",
@@ -31,6 +31,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+voyage = ["voyageai>=0.3.0"]
+openai = ["openai>=1.0.0"]
+cohere = ["cohere>=5.0.0"]
+all = ["voyageai>=0.3.0", "openai>=1.0.0", "cohere>=5.0.0"]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
