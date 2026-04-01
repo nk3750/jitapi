@@ -365,7 +365,7 @@ Score:"""
 
         # Fall back to OpenAI
         if self._openai_client is not None:
-            return self._call_openai(system_prompt, user_prompt, max_tokens)
+            return await self._call_openai(system_prompt, user_prompt, max_tokens)
 
         raise RuntimeError(
             "No LLM backend available for workflow planning. Either:\n"
@@ -415,13 +415,16 @@ Score:"""
             return result.content.text
         return str(result.content)
 
-    def _call_openai(
+    async def _call_openai(
         self,
         system_prompt: str | None,
         user_prompt: str,
         max_tokens: int,
     ) -> str:
         """Call OpenAI API as fallback.
+
+        Runs the sync OpenAI client in a thread to avoid blocking the
+        event loop.
 
         Args:
             system_prompt: Optional system prompt.
@@ -431,12 +434,15 @@ Score:"""
         Returns:
             The response text.
         """
+        import asyncio
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": user_prompt})
 
-        response = self._openai_client.chat.completions.create(
+        response = await asyncio.to_thread(
+            self._openai_client.chat.completions.create,
             model=self.OPENAI_MODEL,
             max_tokens=max_tokens,
             messages=messages,

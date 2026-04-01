@@ -1,5 +1,6 @@
 """Tests for the LLM reranker with MCP sampling and OpenAI fallback."""
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -289,6 +290,11 @@ class TestLLMReranker:
         result = reranker._extract_json(text)
         assert result["steps"] == []
         assert result["reasoning"] == text
+
+    def test_call_openai_is_coroutine(self):
+        """Test that _call_openai is an async function."""
+        reranker = LLMReranker()
+        assert asyncio.iscoroutinefunction(reranker._call_openai)
 
 
 class TestWorkflowStep:
