@@ -227,23 +227,23 @@ class VectorStore:
             if filter_deprecated and meta.get("deprecated") is True:
                 mask[i] = False
 
-        # Apply mask and get top-k
-        similarities[~mask] = -1.0
-        top_indices = np.argsort(similarities)[::-1][:top_k]
+        # Get indices of valid (unmasked) items, sort by similarity descending
+        valid_indices = np.where(mask)[0]
+        if len(valid_indices) == 0:
+            return []
+
+        valid_sims = similarities[valid_indices]
+        sorted_order = np.argsort(valid_sims)[::-1][:top_k]
+        top_indices = valid_indices[sorted_order]
 
         results = []
         for idx in top_indices:
-            if not mask[idx]:
-                continue
-            score = float(similarities[idx])
-            if score <= -1.0:
-                continue
             meta = self._metadatas[idx]
             results.append(
                 SearchResult(
                     endpoint_id=meta.get("endpoint_id", ""),
                     api_id=meta.get("api_id", ""),
-                    score=score,
+                    score=float(similarities[idx]),
                     metadata=meta,
                 )
             )

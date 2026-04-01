@@ -277,3 +277,36 @@ class TestVectorStore:
         assert isinstance(results[0], SearchResult)
         assert isinstance(results[0].score, float)
         assert isinstance(results[0].metadata, dict)
+
+    def test_search_filtering_does_not_waste_top_k_slots(self, vector_store):
+        """Test that filtered items don't consume top_k slots.
+
+        Add 10 endpoints, mark 8 as deprecated, search with top_k=5.
+        Should return exactly 2 (the non-deprecated ones), not fewer
+        due to filtered items occupying top_k slots.
+        """
+        query_emb = _make_embedding(seed=100)
+        for i in range(10):
+            vector_store.add_endpoint(
+                endpoint_id=f"GET /ep{i}",
+                api_id="test",
+                embedding=_make_embedding(seed=i),
+                metadata={"deprecated": i < 8},  # 0-7 deprecated, 8-9 not
+            )
+
+        results = vector_store.search(query_emb, top_k=5, filter_deprecated=True)
+        assert len(results) == 2
+
+    def test_search_all_deprecated_returns_empty(self, vector_store):
+        """Test that searching with all items deprecated returns empty."""
+        query_emb = _make_embedding(seed=100)
+        for i in range(5):
+            vector_store.add_endpoint(
+                endpoint_id=f"GET /ep{i}",
+                api_id="test",
+                embedding=_make_embedding(seed=i),
+                metadata={"deprecated": True},
+            )
+
+        results = vector_store.search(query_emb, top_k=5, filter_deprecated=True)
+        assert results == []
