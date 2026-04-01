@@ -4,7 +4,7 @@ version = "0.2.0"
 description = "Just-in-Time API Orchestration System for LLMs - An MCP server for dynamic API discovery and execution"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 keywords = ["mcp", "api", "openapi", "llm", "orchestration", "claude", "ai"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -12,6 +12,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Python Modules",
@@ -63,4 +64,4 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py310"
