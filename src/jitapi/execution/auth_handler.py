@@ -6,6 +6,7 @@ Manages authentication credentials and injects them into API requests.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -70,6 +71,8 @@ class AuthHandler:
 
         if self.storage_dir:
             self.storage_dir.mkdir(parents=True, exist_ok=True)
+            # Security: credentials at rest — restrict directory to owner only
+            os.chmod(self.storage_dir, 0o700)
             self._auth_file = self.storage_dir / "auth.json"
             self._load_configs()
 
@@ -127,6 +130,8 @@ class AuthHandler:
 
         with open(self._auth_file, "w") as f:
             json.dump(data, f, indent=2)
+        # Security: credentials at rest — restrict file to owner read/write only
+        os.chmod(self._auth_file, 0o600)
 
     def set_api_key(
         self,
