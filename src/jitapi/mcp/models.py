@@ -138,9 +138,13 @@ class SetApiAuthInput(BaseModel):
         description="Type of authentication",
     )
     credential: str = Field(
-        ...,
-        description="The API key or bearer token",
-        min_length=1,
+        "",
+        description="The API key or bearer token. Not required when env_var is set.",
+    )
+    env_var: str | None = Field(
+        None,
+        description="Environment variable name that holds the credential. "
+        "When set, the secret is read from this env var at request time and never written to disk.",
     )
     header_name: str = Field(
         "X-API-Key",

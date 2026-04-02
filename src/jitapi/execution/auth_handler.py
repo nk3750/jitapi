@@ -6,11 +6,14 @@ Manages authentication credentials and injects them into API requests.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class AuthType(Enum):
@@ -51,6 +54,10 @@ class AuthConfig:
 
     # For custom headers
     custom_headers: dict[str, str] | None = None
+
+    # Env var reference — when set, the credential is resolved from this
+    # env var at request time instead of being stored on disk.
+    credential_env_var: str | None = None
 
 
 class AuthHandler:
@@ -101,31 +108,40 @@ class AuthHandler:
                     client_id=config_data.get("client_id"),
                     client_secret=config_data.get("client_secret"),
                     custom_headers=config_data.get("custom_headers"),
+                    credential_env_var=config_data.get("credential_env_var"),
                 )
         except (json.JSONDecodeError, KeyError):
             pass
 
     def _save_configs(self) -> None:
-        """Save auth configs to disk."""
+        """Save auth configs to disk.
+
+        When a credential_env_var is set, the actual secret is NOT written
+        to disk — only the env var name is persisted. The secret is resolved
+        from the environment at request time.
+        """
         if not self.storage_dir:
             return
 
         data = {}
         for api_id, config in self._configs.items():
+            env_var = config.credential_env_var
             data[api_id] = {
                 "auth_type": config.auth_type.value,
-                "api_key": config.api_key,
+                # When env var is set, don't persist the actual secrets
+                "api_key": None if env_var else config.api_key,
                 "api_key_header": config.api_key_header,
                 "api_key_prefix": config.api_key_prefix,
                 "api_key_param": config.api_key_param,
                 "username": config.username,
-                "password": config.password,
-                "access_token": config.access_token,
-                "refresh_token": config.refresh_token,
+                "password": None if env_var else config.password,
+                "access_token": None if env_var else config.access_token,
+                "refresh_token": None if env_var else config.refresh_token,
                 "token_url": config.token_url,
                 "client_id": config.client_id,
-                "client_secret": config.client_secret,
+                "client_secret": None if env_var else config.client_secret,
                 "custom_headers": config.custom_headers,
+                "credential_env_var": env_var,
             }
 
         with open(self._auth_file, "w") as f:
@@ -139,14 +155,17 @@ class AuthHandler:
         api_key: str,
         header_name: str = "X-API-Key",
         prefix: str = "",
+        env_var: str | None = None,
     ) -> None:
         """Set API key authentication for an API.
 
         Args:
             api_id: The API identifier.
-            api_key: The API key value.
+            api_key: The API key value (ignored if env_var is set).
             header_name: The header to use (default: X-API-Key).
             prefix: Optional prefix for the key (e.g., "Bearer ").
+            env_var: Env var name to read the key from at request time.
+                     When set, the key is never written to disk.
         """
         self._configs[api_id] = AuthConfig(
             auth_type=AuthType.API_KEY,
@@ -154,6 +173,7 @@ class AuthHandler:
             api_key=api_key,
             api_key_header=header_name,
             api_key_prefix=prefix,
+            credential_env_var=env_var,
         )
         self._save_configs()
 
@@ -162,33 +182,42 @@ class AuthHandler:
         api_id: str,
         api_key: str,
         param_name: str = "apikey",
+        env_var: str | None = None,
     ) -> None:
         """Set API key authentication via query parameter.
 
         Args:
             api_id: The API identifier.
-            api_key: The API key value.
+            api_key: The API key value (ignored if env_var is set).
             param_name: The query parameter name.
+            env_var: Env var name to read the key from at request time.
+                     When set, the key is never written to disk.
         """
         self._configs[api_id] = AuthConfig(
             auth_type=AuthType.API_KEY,
             api_id=api_id,
             api_key=api_key,
             api_key_param=param_name,
+            credential_env_var=env_var,
         )
         self._save_configs()
 
-    def set_bearer_token(self, api_id: str, token: str) -> None:
+    def set_bearer_token(
+        self, api_id: str, token: str, env_var: str | None = None,
+    ) -> None:
         """Set Bearer token authentication.
 
         Args:
             api_id: The API identifier.
-            token: The bearer token.
+            token: The bearer token (ignored if env_var is set).
+            env_var: Env var name to read the token from at request time.
+                     When set, the token is never written to disk.
         """
         self._configs[api_id] = AuthConfig(
             auth_type=AuthType.BEARER_TOKEN,
             api_id=api_id,
             access_token=token,
+            credential_env_var=env_var,
         )
         self._save_configs()
 
@@ -233,6 +262,28 @@ class AuthHandler:
         """
         return self._configs.get(api_id)
 
+    def _resolve_credential(self, config: AuthConfig) -> str | None:
+        """Resolve the credential value, checking env var if configured.
+
+        Args:
+            config: The auth config.
+
+        Returns:
+            The credential string, or None if not available.
+        """
+        if config.credential_env_var:
+            value = os.environ.get(config.credential_env_var)
+            if not value:
+                logger.warning(
+                    f"Env var {config.credential_env_var} not set for API {config.api_id}"
+                )
+            return value
+
+        # Fall back to stored credential
+        if config.auth_type == AuthType.BEARER_TOKEN:
+            return config.access_token
+        return config.api_key
+
     def apply_auth(
         self,
         api_id: str,
@@ -240,6 +291,9 @@ class AuthHandler:
         query_params: dict[str, str] | None = None,
     ) -> tuple[dict[str, str], dict[str, str] | None]:
         """Apply authentication to request headers/params.
+
+        When credential_env_var is set on the config, the secret is resolved
+        from the environment at request time — nothing is read from disk.
 
         Args:
             api_id: The API identifier.
@@ -254,25 +308,31 @@ class AuthHandler:
             return headers, query_params
 
         if config.auth_type == AuthType.API_KEY:
-            if config.api_key_param:
-                # Add to query params
-                if query_params is None:
-                    query_params = {}
-                query_params[config.api_key_param] = config.api_key
-            else:
-                # Add to headers
-                value = f"{config.api_key_prefix}{config.api_key}"
-                headers[config.api_key_header] = value
+            credential = self._resolve_credential(config)
+            if credential:
+                if config.api_key_param:
+                    if query_params is None:
+                        query_params = {}
+                    query_params[config.api_key_param] = credential
+                else:
+                    value = f"{config.api_key_prefix}{credential}"
+                    headers[config.api_key_header] = value
 
         elif config.auth_type == AuthType.BEARER_TOKEN:
-            headers["Authorization"] = f"Bearer {config.access_token}"
+            credential = self._resolve_credential(config)
+            if credential:
+                headers["Authorization"] = f"Bearer {credential}"
 
         elif config.auth_type == AuthType.BASIC:
             import base64
 
-            credentials = f"{config.username}:{config.password}"
-            encoded = base64.b64encode(credentials.encode()).decode()
-            headers["Authorization"] = f"Basic {encoded}"
+            password = config.password
+            if config.credential_env_var:
+                password = os.environ.get(config.credential_env_var)
+            if config.username and password:
+                credentials = f"{config.username}:{password}"
+                encoded = base64.b64encode(credentials.encode()).decode()
+                headers["Authorization"] = f"Basic {encoded}"
 
         elif config.auth_type == AuthType.CUSTOM_HEADER:
             if config.custom_headers:

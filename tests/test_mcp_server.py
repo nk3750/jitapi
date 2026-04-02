@@ -26,7 +26,6 @@ def mock_components():
         "graph_store": MagicMock(),
         "embedder": MagicMock(),
         "auth_handler": MagicMock(),
-        "reranker": MagicMock(),
     }
 
 

@@ -218,7 +218,9 @@ class ToolRegistry:
             {
                 "name": "set_api_auth",
                 "description": "Configure authentication for an API. "
-                "Supports API key (header or query param) and bearer token auth.",
+                "Supports API key (header or query param) and bearer token auth. "
+                "Use env_var to reference a secret from an environment variable — "
+                "the credential is then resolved at request time and never stored on disk.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -233,7 +235,12 @@ class ToolRegistry:
                         },
                         "credential": {
                             "type": "string",
-                            "description": "The API key or bearer token",
+                            "description": "The API key or bearer token. Not required when env_var is set.",
+                        },
+                        "env_var": {
+                            "type": "string",
+                            "description": "Environment variable name that holds the credential (e.g., 'GITHUB_TOKEN'). "
+                            "When set, the secret is read from this env var at request time and never written to disk.",
                         },
                         "header_name": {
                             "type": "string",
@@ -244,7 +251,7 @@ class ToolRegistry:
                             "description": "Query param name for API key auth",
                         },
                     },
-                    "required": ["api_id", "auth_type", "credential"],
+                    "required": ["api_id", "auth_type"],
                 },
             },
             {
@@ -540,16 +547,29 @@ class ToolRegistry:
         """Configure API authentication."""
         api_id = args["api_id"]
         auth_type = args["auth_type"]
-        credential = args["credential"]
+        credential = args.get("credential", "")
+        env_var = args.get("env_var")
+
+        # Must provide either credential or env_var
+        if not credential and not env_var:
+            return ToolResult(
+                success=False,
+                data=None,
+                error="Either 'credential' or 'env_var' must be provided.",
+            )
 
         if auth_type == "api_key":
             header_name = args.get("header_name", "X-API-Key")
-            self.auth_handler.set_api_key(api_id, credential, header_name)
+            self.auth_handler.set_api_key(
+                api_id, credential, header_name, env_var=env_var,
+            )
         elif auth_type == "api_key_query":
             param_name = args.get("param_name", "apikey")
-            self.auth_handler.set_api_key_query_param(api_id, credential, param_name)
+            self.auth_handler.set_api_key_query_param(
+                api_id, credential, param_name, env_var=env_var,
+            )
         elif auth_type == "bearer":
-            self.auth_handler.set_bearer_token(api_id, credential)
+            self.auth_handler.set_bearer_token(api_id, credential, env_var=env_var)
         else:
             return ToolResult(
                 success=False,
@@ -557,12 +577,14 @@ class ToolRegistry:
                 error=f"Unknown auth type: {auth_type}",
             )
 
+        source = f"env var ${env_var}" if env_var else "provided credential"
         return ToolResult(
             success=True,
             data={
                 "api_id": api_id,
                 "auth_type": auth_type,
-                "message": f"Authentication configured for {api_id}",
+                "credential_source": "env_var" if env_var else "direct",
+                "message": f"Authentication configured for {api_id} (from {source})",
             },
         )
 
