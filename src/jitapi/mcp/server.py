@@ -31,7 +31,6 @@ from mcp.types import (
 from ..execution.auth_handler import AuthHandler
 from ..ingestion.embedder import EndpointEmbedder
 from ..ingestion.indexer import APIIndexer
-from ..retrieval.reranker import LLMReranker
 from ..stores.graph_store import GraphStore
 from ..stores.spec_store import SpecStore
 from ..stores.vector_store import VectorStore
@@ -92,7 +91,6 @@ class SamvaadServer:
     def __init__(
         self,
         storage_dir: str | Path,
-        openai_api_key: str | None = None,
         log_level: str = "INFO",
         log_file: str | None = None,
     ):
@@ -100,7 +98,6 @@ class SamvaadServer:
 
         Args:
             storage_dir: Directory for data storage.
-            openai_api_key: Optional OpenAI API key (for fallback). No longer required.
             log_level: Logging level (DEBUG, INFO, WARNING, ERROR).
             log_file: Optional file path for logging.
         """
@@ -113,23 +110,26 @@ class SamvaadServer:
 
         # Initialize embedder (auto-detects provider from env vars)
         logger.debug("Initializing embedder...")
-        self.embedder = EndpointEmbedder(api_key=openai_api_key)
+        self.embedder = EndpointEmbedder()
 
-        # Initialize components
-        logger.debug("Initializing indexer...")
-        self.indexer = APIIndexer(self.storage_dir, embedder=self.embedder)
-
+        # Initialize stores (shared across indexer and tool registry)
         logger.debug("Initializing stores...")
         self.spec_store = SpecStore(self.storage_dir)
         self.vector_store = VectorStore(self.storage_dir)
         self.graph_store = GraphStore(self.storage_dir)
 
+        # Initialize indexer with shared stores so writes are visible to searches
+        logger.debug("Initializing indexer...")
+        self.indexer = APIIndexer(
+            self.storage_dir,
+            embedder=self.embedder,
+            spec_store=self.spec_store,
+            graph_store=self.graph_store,
+            vector_store=self.vector_store,
+        )
+
         logger.debug("Initializing auth handler...")
         self.auth_handler = AuthHandler(self.storage_dir)
-
-        # Reranker (uses MCP sampling by default, OpenAI as fallback)
-        logger.debug("Initializing reranker...")
-        self.reranker = LLMReranker(api_key=openai_api_key)
 
         # Initialize registries
         logger.debug("Initializing tool registry...")
@@ -140,7 +140,6 @@ class SamvaadServer:
             graph_store=self.graph_store,
             embedder=self.embedder,
             auth_handler=self.auth_handler,
-            reranker=self.reranker,
         )
         self.resource_registry = ResourceRegistry(self.spec_store)
 
@@ -171,16 +170,7 @@ class SamvaadServer:
             logger.info(f"Tool call: {name}")
             logger.debug(f"Tool arguments: {arguments}")
 
-            # Get MCP session for sampling (reranker uses this)
-            mcp_session = None
-            try:
-                mcp_session = self.server.request_context.session
-            except Exception:
-                logger.debug("MCP session not available for sampling")
-
-            result = await self.tool_registry.execute_tool(
-                name, arguments, mcp_session=mcp_session
-            )
+            result = await self.tool_registry.execute_tool(name, arguments)
 
             if result.success:
                 logger.info(f"Tool {name} completed successfully")
@@ -326,7 +316,6 @@ Search for relevant endpoints and show me the workflow needed.""",
 
 def create_server(
     storage_dir: str | Path,
-    openai_api_key: str | None = None,
     log_level: str = "INFO",
     log_file: str | None = None,
 ) -> SamvaadServer:
@@ -334,7 +323,6 @@ def create_server(
 
     Args:
         storage_dir: Directory for data storage.
-        openai_api_key: OpenAI API key for embeddings and reranking.
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR).
         log_file: Optional file path for logging.
 
@@ -343,7 +331,6 @@ def create_server(
     """
     return SamvaadServer(
         storage_dir=storage_dir,
-        openai_api_key=openai_api_key,
         log_level=log_level,
         log_file=log_file,
     )

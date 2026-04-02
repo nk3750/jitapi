@@ -25,9 +25,7 @@ def main():
     - COHERE_API_KEY set → Cohere embeddings
     - None set → local fastembed (zero-config, no API key needed)
 
-    Reranker (workflow planning):
-    - Uses MCP sampling (host LLM) by default — no API key needed
-    - Falls back to OpenAI if OPENAI_API_KEY is set and sampling unavailable
+    No separate LLM needed — the host LLM (Claude) handles workflow planning.
     """
     # Load .env files (in order of priority)
     load_dotenv()
@@ -39,7 +37,6 @@ def main():
         "JITAPI_STORAGE_DIR",
         str(Path.home() / ".jitapi"),
     )
-    openai_api_key = os.environ.get("OPENAI_API_KEY")
     log_level = os.environ.get("JITAPI_LOG_LEVEL", "INFO")
     log_file = os.environ.get("JITAPI_LOG_FILE")
 
@@ -48,7 +45,6 @@ def main():
 
     server = create_server(
         storage_dir=storage_dir,
-        openai_api_key=openai_api_key,
         log_level=log_level,
         log_file=log_file,
     )

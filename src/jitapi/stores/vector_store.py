@@ -219,6 +219,14 @@ class VectorStore:
                 self._embeddings[valid] @ query / (norms[valid] * query_norm)
             )
 
+        # Fix 1: Path depth penalty — favor simpler/core endpoints over sub-endpoints
+        # e.g., /repos/{owner}/{repo}/issues should rank above /repos/{owner}/{repo}/issues/{id}/labels
+        for i, meta in enumerate(self._metadatas):
+            path = meta.get("path", "")
+            depth = path.strip("/").count("/")  # segments - 1
+            if depth > 3:
+                similarities[i] -= 0.01 * (depth - 3)
+
         # Build candidate mask
         mask = np.ones(len(self._ids), dtype=bool)
         for i, meta in enumerate(self._metadatas):
@@ -227,14 +235,40 @@ class VectorStore:
             if filter_deprecated and meta.get("deprecated") is True:
                 mask[i] = False
 
-        # Get indices of valid (unmasked) items, sort by similarity descending
-        valid_indices = np.where(mask)[0]
-        if len(valid_indices) == 0:
-            return []
+        # Fix 2: Per-API fair search — prevent large APIs from crowding out small ones
+        registered_api_ids = (
+            {self._metadatas[i].get("api_id") for i in range(len(self._metadatas)) if mask[i] and self._metadatas[i].get("api_id")}
+            if not api_id else set()
+        )
 
-        valid_sims = similarities[valid_indices]
-        sorted_order = np.argsort(valid_sims)[::-1][:top_k]
-        top_indices = valid_indices[sorted_order]
+        if not api_id and len(registered_api_ids) > 1:
+            # Collect top results per API, then merge
+            per_api_k = max(2, top_k // len(registered_api_ids) + 1)
+            all_candidates: list[tuple[int, float]] = []
+
+            for aid in registered_api_ids:
+                api_indices = np.array([
+                    i for i in range(len(self._metadatas))
+                    if mask[i] and self._metadatas[i].get("api_id") == aid
+                ])
+                if len(api_indices) == 0:
+                    continue
+                api_sims = similarities[api_indices]
+                sorted_order = np.argsort(api_sims)[::-1][:per_api_k]
+                for idx in api_indices[sorted_order]:
+                    all_candidates.append((idx, float(similarities[idx])))
+
+            all_candidates.sort(key=lambda x: x[1], reverse=True)
+            top_indices = [c[0] for c in all_candidates[:top_k]]
+        else:
+            # Scoped search or single API — existing logic
+            valid_indices = np.where(mask)[0]
+            if len(valid_indices) == 0:
+                return []
+
+            valid_sims = similarities[valid_indices]
+            sorted_order = np.argsort(valid_sims)[::-1][:top_k]
+            top_indices = valid_indices[sorted_order]
 
         results = []
         for idx in top_indices:

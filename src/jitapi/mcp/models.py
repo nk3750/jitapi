@@ -152,25 +152,6 @@ class SetApiAuthInput(BaseModel):
     )
 
 
-class ExecuteWorkflowInput(BaseModel):
-    """Input for execute_workflow tool."""
-
-    workflow_id: str = Field(
-        ...,
-        description="The workflow ID returned by get_workflow",
-        min_length=1,
-    )
-    api_id: str = Field(
-        ...,
-        description="The API identifier",
-        min_length=1,
-    )
-    override_params: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Optional parameters to override",
-    )
-
-
 class DeleteApiInput(BaseModel):
     """Input for delete_api tool."""
 
@@ -192,7 +173,6 @@ TOOL_INPUT_MODELS: dict[str, type[BaseModel]] = {
     "get_endpoint_schema": GetEndpointSchemaInput,
     "call_api": CallApiInput,
     "set_api_auth": SetApiAuthInput,
-    "execute_workflow": ExecuteWorkflowInput,
     "delete_api": DeleteApiInput,
 }
 

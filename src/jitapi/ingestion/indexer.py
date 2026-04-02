@@ -46,6 +46,9 @@ class APIIndexer:
         storage_dir: str | Path,
         openai_api_key: str | None = None,
         embedder: EndpointEmbedder | None = None,
+        spec_store: SpecStore | None = None,
+        graph_store: GraphStore | None = None,
+        vector_store: VectorStore | None = None,
     ):
         """Initialize the API indexer.
 
@@ -53,6 +56,9 @@ class APIIndexer:
             storage_dir: Base directory for all storage.
             openai_api_key: Deprecated. Use embedder param or env vars instead.
             embedder: Optional pre-configured embedder. If None, auto-detected.
+            spec_store: Optional shared SpecStore instance.
+            graph_store: Optional shared GraphStore instance.
+            vector_store: Optional shared VectorStore instance.
         """
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
@@ -62,10 +68,10 @@ class APIIndexer:
         self.graph_builder = DependencyGraphBuilder()
         self.embedder = embedder or EndpointEmbedder(api_key=openai_api_key)
 
-        # Initialize stores
-        self.spec_store = SpecStore(self.storage_dir)
-        self.graph_store = GraphStore(self.storage_dir)
-        self.vector_store = VectorStore(self.storage_dir)
+        # Use shared stores if provided, otherwise create new ones
+        self.spec_store = spec_store or SpecStore(self.storage_dir)
+        self.graph_store = graph_store or GraphStore(self.storage_dir)
+        self.vector_store = vector_store or VectorStore(self.storage_dir)
 
     async def index_from_url(
         self,

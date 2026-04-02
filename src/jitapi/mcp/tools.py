@@ -15,11 +15,9 @@ from pydantic import ValidationError
 from ..execution.auth_handler import AuthHandler
 from ..execution.http_executor import HTTPExecutor
 from ..execution.schema_formatter import SchemaFormatter
-from ..execution.workflow_executor import WorkflowExecutor
 from ..ingestion.embedder import EndpointEmbedder
 from ..ingestion.indexer import APIIndexer
 from ..retrieval.graph_expander import GraphExpander
-from ..retrieval.reranker import LLMReranker, RerankedWorkflow
 from ..retrieval.vector_search import VectorSearcher
 from ..stores.graph_store import GraphStore
 from ..stores.spec_store import SpecStore
@@ -60,7 +58,6 @@ class ToolRegistry:
         graph_store: GraphStore,
         embedder: EndpointEmbedder,
         auth_handler: AuthHandler,
-        reranker: LLMReranker | None = None,
     ):
         """Initialize the tool registry.
 
@@ -71,7 +68,6 @@ class ToolRegistry:
             graph_store: Graph store for dependencies.
             embedder: Embedder for query embedding.
             auth_handler: Auth handler for API credentials.
-            reranker: Optional LLM reranker.
         """
         self.indexer = indexer
         self.spec_store = spec_store
@@ -79,17 +75,12 @@ class ToolRegistry:
         self.graph_store = graph_store
         self.embedder = embedder
         self.auth_handler = auth_handler
-        self.reranker = reranker
 
         # Initialize helper components
         self.vector_searcher = VectorSearcher(vector_store, embedder)
         self.graph_expander = GraphExpander(graph_store, spec_store)
         self.schema_formatter = SchemaFormatter()
         self.http_executor = HTTPExecutor(auth_handler)
-        self.workflow_executor = WorkflowExecutor(self.http_executor, spec_store)
-
-        # Cache for storing workflows (to enable execute_workflow)
-        self._workflow_cache: dict[str, RerankedWorkflow] = {}
 
     def get_tool_definitions(self) -> list[dict[str, Any]]:
         """Get MCP tool definitions for all tools.
@@ -151,9 +142,10 @@ class ToolRegistry:
             },
             {
                 "name": "get_workflow",
-                "description": "Get a complete workflow for accomplishing a task. "
-                "Returns ordered endpoints with dependency resolution and full schemas. "
-                "Use this when you need to understand how to accomplish something with an API.",
+                "description": "Get relevant endpoints with dependency resolution and full schemas "
+                "for accomplishing a task. Returns search results expanded with their dependencies "
+                "so you can plan and execute the right API calls in the right order. "
+                "After reviewing the results, use call_api to execute each step.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -167,7 +159,7 @@ class ToolRegistry:
                         },
                         "max_steps": {
                             "type": "integer",
-                            "description": "Maximum steps in the workflow (default: 5)",
+                            "description": "Maximum number of endpoints to return (default: 5)",
                             "default": 5,
                         },
                     },
@@ -256,31 +248,6 @@ class ToolRegistry:
                 },
             },
             {
-                "name": "execute_workflow",
-                "description": "Execute a complete workflow that was returned by get_workflow. "
-                "This runs all steps in sequence, automatically passing data between steps. "
-                "The workflow's parameters are already extracted from the original query. "
-                "Make sure authentication is configured first with set_api_auth.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "workflow_id": {
-                            "type": "string",
-                            "description": "The workflow ID returned by get_workflow",
-                        },
-                        "api_id": {
-                            "type": "string",
-                            "description": "The API identifier",
-                        },
-                        "override_params": {
-                            "type": "object",
-                            "description": "Optional parameters to override those extracted from the query",
-                        },
-                    },
-                    "required": ["workflow_id", "api_id"],
-                },
-            },
-            {
                 "name": "delete_api",
                 "description": "Delete a registered API and all its data including endpoints, "
                 "embeddings, dependency graph, and authentication credentials.",
@@ -299,19 +266,16 @@ class ToolRegistry:
 
     async def execute_tool(
         self, tool_name: str, arguments: dict[str, Any],
-        mcp_session: Any = None,
     ) -> ToolResult:
         """Execute a tool by name.
 
         Args:
             tool_name: The tool to execute.
             arguments: Tool arguments.
-            mcp_session: MCP server session for sampling (passed to reranker).
 
         Returns:
             ToolResult with execution results.
         """
-        self._current_mcp_session = mcp_session
         handlers = {
             "register_api": self._register_api,
             "list_apis": self._list_apis,
@@ -320,7 +284,6 @@ class ToolRegistry:
             "get_endpoint_schema": self._get_endpoint_schema,
             "call_api": self._call_api,
             "set_api_auth": self._set_api_auth,
-            "execute_workflow": self._execute_workflow,
             "delete_api": self._delete_api,
         }
 
@@ -431,9 +394,7 @@ class ToolRegistry:
         )
 
     async def _get_workflow(self, args: dict[str, Any]) -> ToolResult:
-        """Get a complete workflow for a task."""
-        import uuid
-
+        """Get relevant endpoints with dependencies and schemas for a task."""
         query = args["query"]
         api_id = args["api_id"]
         max_steps = args.get("max_steps", 5)
@@ -448,92 +409,59 @@ class ToolRegistry:
                 error=f"No endpoints found for query: {query}",
             )
 
-        # Step 2: Graph expansion
+        # Step 2: Graph expansion (adds dependencies the search might have missed)
         expansion = self.graph_expander.expand(
             search_results, api_id, max_depth=2, max_total=10
         )
 
-        # Step 3: Rerank (if reranker available)
-        if self.reranker:
-            workflow = await self.reranker.rerank(
-                query, expansion.endpoints, max_steps,
-                mcp_session=getattr(self, '_current_mcp_session', None),
-            )
+        # Step 3: Collect endpoint data
+        step_data = []
+        step_endpoint_ids = set()
+        for ep in expansion.endpoints[:max_steps]:
+            endpoint = self.spec_store.get_endpoint(api_id, ep.endpoint_id)
+            if endpoint:
+                schema = self.schema_formatter.format_endpoint_for_call(endpoint)
+                dependencies = self.graph_store.get_dependencies(api_id, ep.endpoint_id)
+                step_endpoint_ids.add(ep.endpoint_id)
+                step_data.append(
+                    {
+                        "endpoint_id": ep.endpoint_id,
+                        "path": ep.path,
+                        "method": ep.method,
+                        "summary": ep.summary,
+                        "relevance_score": round(ep.score, 3),
+                        "is_dependency": ep.is_dependency,
+                        "dependencies": dependencies,
+                        "schema": schema,
+                    }
+                )
 
-            # Generate workflow ID and cache it
-            workflow_id = str(uuid.uuid4())[:8]
-            self._workflow_cache[workflow_id] = workflow
-            logger.info(f"Cached workflow {workflow_id} with {len(workflow.steps)} steps")
+        # Step 4: Order steps — dependencies (providers) before dependents (consumers)
+        # Simple heuristic: endpoints marked as dependencies come first,
+        # then sort by relevance score within each group.
+        # This handles cycles gracefully (common in auto-generated dependency graphs).
+        dep_steps = [s for s in step_data if s["is_dependency"]]
+        direct_steps = [s for s in step_data if not s["is_dependency"]]
+        dep_steps.sort(key=lambda s: s["relevance_score"], reverse=True)
+        direct_steps.sort(key=lambda s: s["relevance_score"], reverse=True)
+        step_data = dep_steps + direct_steps
 
-            # Step 4: Get full schemas for selected endpoints
-            steps_with_schemas = []
-            for step in workflow.steps:
-                endpoint = self.spec_store.get_endpoint(api_id, step.endpoint_id)
-                if endpoint:
-                    schema = self.schema_formatter.format_endpoint_for_call(endpoint)
+        # Number the steps
+        steps = []
+        for i, step in enumerate(step_data):
+            step["step"] = i + 1
+            steps.append(step)
 
-                    # Include parameter extraction info
-                    parameters_info = {}
-                    for param_name, param_source in step.parameters.items():
-                        parameters_info[param_name] = {
-                            "value": param_source.value,
-                            "source": param_source.source,
-                        }
-
-                    steps_with_schemas.append(
-                        {
-                            "step": step.step_number,
-                            "endpoint_id": step.endpoint_id,
-                            "path": step.path,
-                            "method": step.method,
-                            "purpose": step.purpose,
-                            "requires": step.requires,
-                            "provides": step.provides,
-                            "parameters": parameters_info,
-                            "output_mapping": step.output_mapping,
-                            "schema": schema,
-                        }
-                    )
-
-            return ToolResult(
-                success=True,
-                data={
-                    "workflow_id": workflow_id,
-                    "query": query,
-                    "reasoning": workflow.reasoning,
-                    "steps": steps_with_schemas,
-                    "total_steps": len(steps_with_schemas),
-                    "message": f"Workflow ready. Use execute_workflow with workflow_id='{workflow_id}' to run it.",
-                },
-            )
-        else:
-            # Without reranker, just return expanded endpoints
-            steps = []
-            for i, ep in enumerate(expansion.endpoints[:max_steps]):
-                endpoint = self.spec_store.get_endpoint(api_id, ep.endpoint_id)
-                if endpoint:
-                    schema = self.schema_formatter.format_endpoint_for_call(endpoint)
-                    steps.append(
-                        {
-                            "step": i + 1,
-                            "endpoint_id": ep.endpoint_id,
-                            "path": ep.path,
-                            "method": ep.method,
-                            "summary": ep.summary,
-                            "is_dependency": ep.is_dependency,
-                            "schema": schema,
-                        }
-                    )
-
-            return ToolResult(
-                success=True,
-                data={
-                    "query": query,
-                    "steps": steps,
-                    "total_steps": len(steps),
-                    "message": "Note: Reranker not available. Steps may not have parameter extraction.",
-                },
-            )
+        return ToolResult(
+            success=True,
+            data={
+                "query": query,
+                "api_id": api_id,
+                "steps": steps,
+                "total_endpoints": len(steps),
+                "message": "Steps are ordered by dependency (prerequisites first). Use call_api to execute each step.",
+            },
+        )
 
     async def _get_endpoint_schema(self, args: dict[str, Any]) -> ToolResult:
         """Get schema for a specific endpoint."""
@@ -636,63 +564,6 @@ class ToolRegistry:
                 "auth_type": auth_type,
                 "message": f"Authentication configured for {api_id}",
             },
-        )
-
-    async def _execute_workflow(self, args: dict[str, Any]) -> ToolResult:
-        """Execute a cached workflow."""
-        workflow_id = args["workflow_id"]
-        api_id = args["api_id"]
-        override_params = args.get("override_params", {})
-
-        # Get workflow from cache
-        workflow = self._workflow_cache.get(workflow_id)
-        if not workflow:
-            return ToolResult(
-                success=False,
-                data=None,
-                error=f"Workflow not found: {workflow_id}. "
-                f"Use get_workflow first to create a workflow.",
-            )
-
-        # Check auth
-        if not self.auth_handler.has_auth(api_id):
-            return ToolResult(
-                success=False,
-                data=None,
-                error=f"No authentication configured for API: {api_id}. "
-                f"Use set_api_auth first.",
-            )
-
-        # Execute the workflow
-        logger.info(f"Executing workflow {workflow_id} with {len(workflow.steps)} steps")
-        result = await self.workflow_executor.execute(
-            workflow=workflow,
-            api_id=api_id,
-            additional_params=override_params if override_params else None,
-        )
-
-        # Build response
-        step_summaries = []
-        for step_result in result.steps:
-            step_summaries.append({
-                "step": step_result.step_number,
-                "endpoint_id": step_result.endpoint_id,
-                "success": step_result.success,
-                "status_code": step_result.status_code,
-                "extracted_data": step_result.extracted_data,
-                "error": step_result.error,
-            })
-
-        return ToolResult(
-            success=result.success,
-            data={
-                "workflow_id": workflow_id,
-                "success": result.success,
-                "steps_executed": len(result.steps),
-                "step_results": step_summaries,
-                "final_result": result.final_result,
-            },
-            error=result.error,
         )
 
     async def _delete_api(self, args: dict[str, Any]) -> ToolResult:

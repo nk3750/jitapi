@@ -134,7 +134,22 @@ class OpenAPIParser:
         else:
             spec_dict = yaml.safe_load(content)
 
-        return self.parse(spec_dict)
+        parsed = self.parse(spec_dict)
+
+        # Resolve relative URLs against the spec's source URL
+        from urllib.parse import urljoin, urlparse
+        origin = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
+
+        if parsed.base_url and not parsed.base_url.startswith(("http://", "https://")):
+            parsed.base_url = urljoin(origin, parsed.base_url)
+
+        for endpoint in parsed.endpoints:
+            endpoint.servers = [
+                urljoin(origin, s) if s and not s.startswith(("http://", "https://")) else s
+                for s in endpoint.servers
+            ]
+
+        return parsed
 
     def parse_from_file(self, file_path: str) -> ParsedSpec:
         """Parse an OpenAPI spec from a local file."""

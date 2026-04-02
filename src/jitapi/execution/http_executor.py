@@ -81,6 +81,21 @@ class HTTPExecutor:
         Returns:
             APICallResult with response data.
         """
+        # Validate required path parameters before making the request
+        import re
+        required_params = re.findall(r"\{(\w+)\}", endpoint.path)
+        provided_params = set(path_params or {})
+        missing = [p for p in required_params if p not in provided_params]
+        if missing:
+            return APICallResult(
+                success=False,
+                status_code=0,
+                body=None,
+                raw_body="",
+                headers={},
+                error_message=f"Missing required path parameter(s): {', '.join(missing)}",
+            )
+
         # Build the URL
         base_url = base_url_override or (endpoint.servers[0] if endpoint.servers else "")
         path = self._substitute_path_params(endpoint.path, path_params or {})
