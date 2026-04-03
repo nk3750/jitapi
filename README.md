@@ -13,6 +13,10 @@ JitAPI is an MCP server that lets Claude interact with *any* API from its OpenAP
 
 https://github.com/user-attachments/assets/53f72f89-a41a-4a9c-a688-ec876ea05fbd
 
+<p align="center">
+  <img src="assets/v020-infographic.png" alt="JitAPI v0.2.0" width="700">
+</p>
+
 ---
 
 ## The Problem
