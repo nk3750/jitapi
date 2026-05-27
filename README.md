@@ -243,3 +243,7 @@ ruff check src/
 ## License
 
 MIT
+
+---
+
+<sub>Built by <a href="https://www.neelabhbuilds.com">Neelabh Kumar</a> — AI engineer and builder.</sub>
