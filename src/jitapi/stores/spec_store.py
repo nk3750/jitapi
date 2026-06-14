@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from ..ingestion.parser import Endpoint, ParsedSpec, Parameter, RequestBody, Response, SpecVersion
+from ..ingestion.parser import Endpoint, ParsedSpec, Parameter, RequestBody, Response
 
 
 @dataclass
