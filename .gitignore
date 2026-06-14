@@ -38,6 +38,8 @@ Thumbs.db
 # Environment and secrets
 .env
 .mcp.json
+.mcp.json*
+*.bak
 
 # Testing
 .pytest_cache/

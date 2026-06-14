@@ -109,7 +109,7 @@ Store in vector DB               Return schemas → Claude executes
 | `get_workflow` | Find relevant endpoints with dependency resolution and full schemas |
 | `get_endpoint_schema` | Get the complete schema for a specific endpoint |
 | `call_api` | Execute a single API call with auth, path params, query params, and body |
-| `set_api_auth` | Configure authentication (API key, bearer token, basic auth) |
+| `set_api_auth` | Configure authentication (API key header, API key query param, or bearer token) |
 | `delete_api` | Remove a registered API and all its data |
 
 ## Setup
@@ -181,7 +181,7 @@ Provider is auto-detected from available environment variables. Priority: Voyage
 
 ### Authentication
 
-Configure API authentication after registering. The recommended approach uses **environment variables** so secrets are never written to disk:
+Configure API authentication after registering. Supported auth types: `bearer`, `api_key` (custom header), and `api_key_query` (query parameter). The recommended approach uses **environment variables** so secrets are never written to disk:
 
 ```json
 {
@@ -216,7 +216,7 @@ Claude: [calls set_api_auth with auth_type="api_key_query", credential="...", pa
 ✓ Auth configured for openweather
 ```
 
-Supported auth types: `bearer`, `api_key_header`, `api_key_query`, `basic`.
+Supported auth types: `bearer`, `api_key` (custom header, default `X-API-Key`), `api_key_query` (query parameter).
 
 > **Security note:** When using `env_var`, credentials are resolved at runtime and never touch the filesystem. When passing `credential` directly, secrets are stored as plaintext JSON at `~/.jitapi/auth.json` (file permissions `0600`, directory `0700`). For production use, prefer the `env_var` approach.
 

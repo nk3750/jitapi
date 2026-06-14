@@ -1,4 +1,4 @@
-"""MCP Server for Samvaad.
+"""MCP Server for JitAPI.
 
 Creates and configures the MCP server that exposes API orchestration
 capabilities to Claude.
@@ -16,13 +16,9 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
     GetPromptResult,
-    ListPromptsResult,
-    ListResourcesResult,
-    ListToolsResult,
     Prompt,
     PromptArgument,
     PromptMessage,
-    ReadResourceResult,
     Resource,
     TextContent,
     Tool,
@@ -41,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 def setup_logging(level: str = "INFO", log_file: str | None = None) -> None:
-    """Configure logging for the Samvaad MCP server.
+    """Configure logging for the JitAPI MCP server.
 
     Args:
         level: Log level (DEBUG, INFO, WARNING, ERROR).
@@ -78,7 +74,7 @@ def setup_logging(level: str = "INFO", log_file: str | None = None) -> None:
     mcp_logger.setLevel(logging.WARNING)
 
 
-class SamvaadServer:
+class JitAPIServer:
     """MCP Server for API orchestration.
 
     Provides tools for:
@@ -94,7 +90,7 @@ class SamvaadServer:
         log_level: str = "INFO",
         log_file: str | None = None,
     ):
-        """Initialize the Samvaad server.
+        """Initialize the JitAPI server.
 
         Args:
             storage_dir: Directory for data storage.
@@ -106,7 +102,7 @@ class SamvaadServer:
 
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Initializing Samvaad server with storage: {self.storage_dir}")
+        logger.info(f"Initializing JitAPI server with storage: {self.storage_dir}")
 
         # Initialize embedder (auto-detects provider from env vars)
         logger.debug("Initializing embedder...")
@@ -146,7 +142,7 @@ class SamvaadServer:
         # Create MCP server
         self.server = Server("jitapi")
         self._setup_handlers()
-        logger.info("Samvaad server initialized successfully")
+        logger.info("JitAPI server initialized successfully")
 
     def _setup_handlers(self):
         """Set up MCP request handlers."""
@@ -177,9 +173,13 @@ class SamvaadServer:
                 content = json.dumps(result.data, indent=2)
             else:
                 logger.warning(f"Tool {name} failed: {result.error}")
-                content = json.dumps(
-                    {"error": result.error, "success": False}, indent=2
-                )
+                # Preserve any payload the handler attached (e.g. call_api's
+                # status_code/body/headers on a non-2xx) so the model can see
+                # what actually went wrong and self-correct.
+                payload = {"error": result.error, "success": False}
+                if result.data is not None:
+                    payload = {**result.data, **payload}
+                content = json.dumps(payload, indent=2)
 
             return [TextContent(type="text", text=content)]
 
@@ -200,7 +200,9 @@ class SamvaadServer:
         @self.server.read_resource()
         async def read_resource(uri: str) -> str:
             """Read a resource."""
-            resource = self.resource_registry.get_resource(uri)
+            # The MCP SDK passes the URI as a pydantic AnyUrl, not a str;
+            # coerce so string operations in get_resource work.
+            resource = self.resource_registry.get_resource(str(uri))
             if resource is None:
                 raise ValueError(f"Resource not found: {uri}")
 
@@ -303,7 +305,7 @@ Search for relevant endpoints and show me the workflow needed.""",
 
     async def run(self):
         """Run the MCP server."""
-        logger.info("Starting Samvaad MCP server on stdio...")
+        logger.info("Starting JitAPI MCP server on stdio...")
         async with stdio_server() as (read_stream, write_stream):
             logger.debug("Server connected, processing requests...")
             await self.server.run(
@@ -311,15 +313,15 @@ Search for relevant endpoints and show me the workflow needed.""",
                 write_stream,
                 self.server.create_initialization_options(),
             )
-        logger.info("Samvaad MCP server stopped")
+        logger.info("JitAPI MCP server stopped")
 
 
 def create_server(
     storage_dir: str | Path,
     log_level: str = "INFO",
     log_file: str | None = None,
-) -> SamvaadServer:
-    """Create a Samvaad MCP server instance.
+) -> JitAPIServer:
+    """Create a JitAPI MCP server instance.
 
     Args:
         storage_dir: Directory for data storage.
@@ -327,9 +329,9 @@ def create_server(
         log_file: Optional file path for logging.
 
     Returns:
-        Configured SamvaadServer instance.
+        Configured JitAPIServer instance.
     """
-    return SamvaadServer(
+    return JitAPIServer(
         storage_dir=storage_dir,
         log_level=log_level,
         log_file=log_file,

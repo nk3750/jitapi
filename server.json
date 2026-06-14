@@ -1,27 +1,41 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.nk3750/jitapi",
-  "description": "An MCP server that provides [describe what your server does]",
+  "description": "Point Claude at any API from its OpenAPI spec. JitAPI semantically searches the right endpoints and resolves their dependencies so the model calls them in the right order — no API key required (local embeddings by default).",
   "repository": {
     "url": "https://github.com/nk3750/jitapi",
     "source": "github"
   },
-  "version": "1.0.0",
+  "version": "0.2.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "jitapi",
-      "version": "1.0.0",
+      "version": "0.2.0",
       "transport": {
         "type": "stdio"
       },
       "environmentVariables": [
         {
-          "description": "Your API key for the service",
-          "isRequired": true,
+          "description": "Optional. Voyage AI API key for higher-quality cloud embeddings. JitAPI works without any key using local fastembed embeddings.",
+          "isRequired": false,
           "format": "string",
           "isSecret": true,
-          "name": "YOUR_API_KEY"
+          "name": "VOYAGE_API_KEY"
+        },
+        {
+          "description": "Optional. OpenAI API key for cloud embeddings (alternative to Voyage).",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true,
+          "name": "OPENAI_API_KEY"
+        },
+        {
+          "description": "Optional. Cohere API key for cloud embeddings (alternative to Voyage).",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true,
+          "name": "COHERE_API_KEY"
         }
       ]
     }

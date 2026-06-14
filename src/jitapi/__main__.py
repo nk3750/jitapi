@@ -1,4 +1,4 @@
-"""Entry point for running Samvaad as a module.
+"""Entry point for running JitAPI as a module.
 
 Enables:
 - python -m jitapi

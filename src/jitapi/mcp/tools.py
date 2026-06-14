@@ -1,11 +1,10 @@
-"""MCP tool definitions for Samvaad.
+"""MCP tool definitions for JitAPI.
 
 Defines the tools exposed to Claude through MCP.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -26,6 +25,29 @@ from .models import validate_tool_input
 
 logger = logging.getLogger(__name__)
 
+_SENSITIVE_KEY_HINTS = ("credential", "password", "token", "secret", "api_key")
+
+
+def _redact_secrets(value: Any) -> Any:
+    """Recursively mask credential-bearing fields before logging tool inputs.
+
+    Recurses into nested dicts/lists so secrets inside e.g. a call_api body are
+    also masked, not just top-level arguments.
+    """
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for key, val in value.items():
+            if val and isinstance(key, str) and any(
+                hint in key.lower() for hint in _SENSITIVE_KEY_HINTS
+            ):
+                out[key] = "***REDACTED***"
+            else:
+                out[key] = _redact_secrets(val)
+        return out
+    if isinstance(value, list):
+        return [_redact_secrets(item) for item in value]
+    return value
+
 
 @dataclass
 class ToolResult:
@@ -37,7 +59,7 @@ class ToolResult:
 
 
 class ToolRegistry:
-    """Registry and executor for Samvaad MCP tools.
+    """Registry and executor for JitAPI MCP tools.
 
     Provides the following tools:
     - register_api: Ingest an OpenAPI spec
@@ -46,7 +68,6 @@ class ToolRegistry:
     - get_workflow: Full retrieval pipeline
     - call_api: Execute an API call
     - set_api_auth: Configure authentication
-    - execute_workflow: Execute a planned workflow
     - delete_api: Remove an API and all its data
     """
 
@@ -159,7 +180,8 @@ class ToolRegistry:
                         },
                         "max_steps": {
                             "type": "integer",
-                            "description": "Maximum number of endpoints to return (default: 5)",
+                            "description": "Maximum number of primary endpoints to return. "
+                            "Prerequisite endpoints found via the dependency graph may be added on top (default: 5).",
                             "default": 5,
                         },
                     },
@@ -307,7 +329,9 @@ class ToolRegistry:
             validated = validate_tool_input(tool_name, arguments)
             # Convert back to dict for handlers (preserves validated/defaulted values)
             validated_args = validated.model_dump()
-            logger.debug(f"Validated input for {tool_name}: {validated_args}")
+            logger.debug(
+                f"Validated input for {tool_name}: {_redact_secrets(validated_args)}"
+            )
         except ValidationError as e:
             error_messages = []
             for error in e.errors():
@@ -344,6 +368,8 @@ class ToolRegistry:
         result = await self.indexer.index_from_url(api_id, spec_url)
 
         if result.success:
+            server_hosts = self._collect_server_hosts(api_id)
+            host_note = ", ".join(server_hosts) if server_hosts else "(no servers declared in spec)"
             return ToolResult(
                 success=True,
                 data={
@@ -352,7 +378,12 @@ class ToolRegistry:
                     "version": result.version,
                     "endpoint_count": result.endpoint_count,
                     "dependency_count": result.dependency_count,
-                    "message": f"Successfully registered {result.title} with {result.endpoint_count} endpoints",
+                    "server_hosts": server_hosts,
+                    "message": (
+                        f"Successfully registered {result.title} with {result.endpoint_count} endpoints. "
+                        f"Calls for this API will be sent to: {host_note}. "
+                        "Confirm these hosts are expected before configuring auth with set_api_auth."
+                    ),
                 },
             )
         else:
@@ -361,6 +392,24 @@ class ToolRegistry:
                 data=None,
                 error=result.error_message,
             )
+
+    def _collect_server_hosts(self, api_id: str) -> list[str]:
+        """Collect the distinct destination hosts declared in an API's spec.
+
+        Surfaced at registration so the user/model can see where calls will be
+        sent (and where credentials would be attached) before configuring auth.
+        """
+        from urllib.parse import urlparse
+
+        hosts: list[str] = []
+        for endpoint in self.spec_store.get_endpoints(api_id) or []:
+            for server in endpoint.servers:
+                if not server:
+                    continue
+                host = urlparse(server).netloc or server
+                if host and host not in hosts:
+                    hosts.append(host)
+        return hosts
 
     async def _list_apis(self, args: dict[str, Any]) -> ToolResult:
         """List all registered APIs."""
@@ -406,8 +455,11 @@ class ToolRegistry:
         api_id = args["api_id"]
         max_steps = args.get("max_steps", 5)
 
-        # Step 1: Vector search
-        search_results = self.vector_searcher.search(query, api_id=api_id, top_k=10)
+        # Step 1: Vector search for the primary candidate endpoints.
+        # Keep this to max_steps so the expansion budget below has room to add
+        # prerequisite endpoints the search missed — searching a full top_k=10
+        # here would fill every slot and silently skip all graph expansion.
+        search_results = self.vector_searcher.search(query, api_id=api_id, top_k=max_steps)
 
         if not search_results:
             return ToolResult(
@@ -416,15 +468,21 @@ class ToolRegistry:
                 error=f"No endpoints found for query: {query}",
             )
 
-        # Step 2: Graph expansion (adds dependencies the search might have missed)
+        # Step 2: Graph expansion — reserve slots for dependency endpoints on
+        # top of the primary hits, and only inject reasonably-confident edges.
+        dep_reserve = 5
         expansion = self.graph_expander.expand(
-            search_results, api_id, max_depth=2, max_total=10
+            search_results,
+            api_id,
+            max_depth=2,
+            max_total=max_steps + dep_reserve,
+            min_confidence=0.6,
         )
 
-        # Step 3: Collect endpoint data
+        # Step 3: Collect endpoint data (primaries + their dependencies)
         step_data = []
         step_endpoint_ids = set()
-        for ep in expansion.endpoints[:max_steps]:
+        for ep in expansion.endpoints:
             endpoint = self.spec_store.get_endpoint(api_id, ep.endpoint_id)
             if endpoint:
                 schema = self.schema_formatter.format_endpoint_for_call(endpoint)

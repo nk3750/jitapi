@@ -70,6 +70,7 @@ class GraphExpander:
         api_id: str,
         max_depth: int = 2,
         max_total: int = 10,
+        min_confidence: float = 0.0,
     ) -> ExpansionResult:
         """Expand search results with dependencies.
 
@@ -78,6 +79,9 @@ class GraphExpander:
             api_id: The API to expand within.
             max_depth: Maximum depth of dependency traversal.
             max_total: Maximum total endpoints to return.
+            min_confidence: Only inject dependency endpoints whose edge
+                confidence is at least this value. Filters out the weakest
+                (often spurious) heuristic edges.
 
         Returns:
             ExpansionResult with expanded endpoints.
@@ -135,6 +139,10 @@ class GraphExpander:
                     dep_id = dep["endpoint_id"]
                     dep_param = dep.get("parameter", "")
                     confidence = dep.get("confidence", 0.0)
+
+                    # Skip weak/low-confidence heuristic edges
+                    if confidence < min_confidence:
+                        continue
 
                     # Record the edge
                     dependency_edges.append(

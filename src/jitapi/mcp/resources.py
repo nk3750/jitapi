@@ -1,4 +1,4 @@
-"""MCP resources for Samvaad.
+"""MCP resources for JitAPI.
 
 Exposes API specifications and endpoint information as MCP resources.
 """
@@ -70,7 +70,8 @@ class ResourceRegistry:
         Returns:
             Resource content dict, or None if not found.
         """
-        # Parse URI
+        # Parse URI (coerce: the MCP SDK may pass a pydantic AnyUrl)
+        uri = str(uri)
         if not uri.startswith("api://"):
             return None
 
@@ -86,7 +87,11 @@ class ResourceRegistry:
         elif resource_type == "endpoints":
             return self._get_endpoints_resource(api_id)
         elif resource_type == "endpoint" and len(parts) >= 3:
-            endpoint_id = "/".join(parts[2:])  # Handle paths with slashes
+            from urllib.parse import unquote
+
+            # Endpoint IDs contain spaces/braces (e.g. 'GET /pets/{petId}') which
+            # AnyUrl percent-encodes; decode so the lookup matches stored ids.
+            endpoint_id = unquote("/".join(parts[2:]))
             return self._get_endpoint_resource(api_id, endpoint_id)
 
         return None

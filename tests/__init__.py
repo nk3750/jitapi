@@ -1,1 +1,1 @@
-"""Tests for Samvaad."""
+"""Tests for JitAPI."""
