@@ -6,12 +6,10 @@ Parses OpenAPI 3.x and Swagger 2.0 specs, extracting endpoints, schemas, and par
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-import httpx
 import yaml
 
 
@@ -122,11 +120,14 @@ class OpenAPIParser:
         self._resolved_refs: dict[str, Any] = {}
 
     async def parse_from_url(self, url: str) -> ParsedSpec:
-        """Fetch and parse an OpenAPI spec from a URL."""
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            response = await client.get(url, timeout=30.0)
-            response.raise_for_status()
-            content = response.text
+        """Fetch and parse an OpenAPI spec from a URL.
+
+        The fetch is SSRF-guarded (private/loopback/metadata hosts blocked),
+        size-capped, and re-validates every redirect hop.
+        """
+        from ..net_guard import fetch_text
+
+        content = await fetch_text(url)
 
         # Determine format
         if url.endswith(".json") or content.strip().startswith("{"):
@@ -169,10 +170,8 @@ class OpenAPIParser:
 
         # Detect version
         if "openapi" in spec:
-            spec_version = SpecVersion.OPENAPI_3
             return self._parse_openapi3(spec)
         elif "swagger" in spec:
-            spec_version = SpecVersion.SWAGGER_2
             return self._parse_swagger2(spec)
         else:
             raise ValueError("Unknown OpenAPI specification format")

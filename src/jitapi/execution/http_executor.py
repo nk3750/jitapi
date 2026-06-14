@@ -7,6 +7,7 @@ and response processing.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -14,7 +15,10 @@ from typing import Any
 import httpx
 
 from ..ingestion.parser import Endpoint
+from ..net_guard import DEFAULT_MAX_BYTES, BlockedRequestError, validate_url
 from .auth_handler import AuthHandler
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -47,15 +51,18 @@ class HTTPExecutor:
         self,
         auth_handler: AuthHandler | None = None,
         timeout: float = DEFAULT_TIMEOUT,
+        max_response_bytes: int = DEFAULT_MAX_BYTES,
     ):
         """Initialize the HTTP executor.
 
         Args:
             auth_handler: Optional auth handler for credential injection.
             timeout: Request timeout in seconds.
+            max_response_bytes: Hard cap on response body size (bytes).
         """
         self.auth_handler = auth_handler
         self.timeout = timeout
+        self.max_response_bytes = max_response_bytes
 
     async def call_endpoint(
         self,
@@ -82,7 +89,6 @@ class HTTPExecutor:
             APICallResult with response data.
         """
         # Validate required path parameters before making the request
-        import re
         required_params = re.findall(r"\{(\w+)\}", endpoint.path)
         provided_params = set(path_params or {})
         missing = [p for p in required_params if p not in provided_params]
@@ -113,6 +119,13 @@ class HTTPExecutor:
 
         # Apply authentication
         if self.auth_handler:
+            if url.startswith("http://") and self.auth_handler.has_auth(api_id):
+                logger.warning(
+                    "Sending credentials for '%s' over cleartext HTTP to %s — "
+                    "the secret is exposed in transit. Prefer an https:// endpoint.",
+                    api_id,
+                    base_url,
+                )
             req_headers, query_params = self.auth_handler.apply_auth(
                 api_id, req_headers, query_params
             )
@@ -184,7 +197,25 @@ class HTTPExecutor:
         body: dict[str, Any] | None = None,
     ) -> APICallResult:
         """Execute the HTTP request."""
-        async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
+        # SSRF guard: block internal/metadata targets before connecting.
+        try:
+            validate_url(url)
+        except BlockedRequestError as e:
+            return APICallResult(
+                success=False,
+                status_code=0,
+                body=None,
+                raw_body="",
+                headers={},
+                error_message=str(e),
+                request_url=url,
+                request_method=method,
+            )
+
+        # follow_redirects=False: a redirect could send credential-bearing
+        # headers to a different (internal/attacker) host. The model sees the
+        # 3xx status and can decide what to do.
+        async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=False) as client:
             try:
                 # Prepare request kwargs
                 kwargs: dict[str, Any] = {
@@ -197,27 +228,64 @@ class HTTPExecutor:
                 if body:
                     kwargs["json"] = body
 
-                # Make request
-                response = await client.request(method, url, **kwargs)
+                # Stream the response so we can enforce a hard size cap
+                # (defends against multi-GB / decompression-bomb responses).
+                async with client.stream(method, url, **kwargs) as response:
+                    total = 0
+                    chunks: list[bytes] = []
+                    truncated = False
+                    async for chunk in response.aiter_bytes():
+                        total += len(chunk)
+                        if total > self.max_response_bytes:
+                            truncated = True
+                            break
+                        chunks.append(chunk)
+                    status_code = response.status_code
+                    resp_headers = dict(response.headers)
+                    encoding = response.encoding or "utf-8"
+
+                raw_body = b"".join(chunks).decode(encoding, errors="replace")
+                if truncated:
+                    raw_body += (
+                        f"\n...[truncated by JitAPI at {self.max_response_bytes} bytes]"
+                    )
 
                 # Parse response body
-                raw_body = response.text
                 try:
-                    parsed_body = response.json()
+                    parsed_body = json.loads(raw_body) if raw_body.strip() else None
                 except json.JSONDecodeError:
                     parsed_body = raw_body
 
                 # Determine success
-                success = 200 <= response.status_code < 300
+                success = 200 <= status_code < 300
+
+                if success and truncated:
+                    error_message = (
+                        f"Response truncated at {self.max_response_bytes} bytes"
+                    )
+                elif success:
+                    error_message = None
+                elif 300 <= status_code < 400:
+                    # Redirects are not auto-followed (a redirect could ship
+                    # credential headers to another host). Tell the model so it
+                    # can re-issue against the target rather than see an opaque fail.
+                    location = resp_headers.get("location", "")
+                    error_message = (
+                        f"Redirect ({status_code}) to '{location}' was not followed. "
+                        "JitAPI does not follow redirects on authenticated calls; "
+                        "re-issue the call against the target URL if it is the intended host."
+                    )
+                else:
+                    error_message = self._extract_error(parsed_body)
 
                 return APICallResult(
                     success=success,
-                    status_code=response.status_code,
-                    headers=dict(response.headers),
+                    status_code=status_code,
+                    headers=resp_headers,
                     body=parsed_body,
                     raw_body=raw_body,
-                    error_message=None if success else self._extract_error(parsed_body),
-                    request_url=str(response.url),
+                    error_message=error_message,
+                    request_url=url,
                     request_method=method,
                 )
 

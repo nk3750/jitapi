@@ -29,8 +29,8 @@ class RegisterApiInput(BaseModel):
     @field_validator("spec_url")
     @classmethod
     def validate_url(cls, v: str) -> str:
-        if not v.startswith(("http://", "https://", "file://")):
-            raise ValueError("spec_url must be a valid URL starting with http://, https://, or file://")
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("spec_url must be a valid URL starting with http:// or https://")
         return v
 
 
